@@ -1,0 +1,19 @@
+# Upload configuration
+UPLOAD_FOLDER: 'uploads'
+
+# OpenAI configuration
+OPENAI_API_KEY: # Your OpenAI API key goes here, e.g. 'sk-proj-uidazio...'
+ANTHROPIC_API_KEY: # Your Anthropic API key goes here 
+
+# Flask configuration
+SECRET_KEY: # Choose a Flask secret key
+
+# Upload configuration
+UPLOAD_FOLDER: 'uploads'
+DROPZONE_UPLOAD_MULTIPLE: False
+DROPZONE_PARALLEL_UPLOADS: 1
+DROPZONE_UPLOAD_ON_CLICK: True
+
+#SQLAlchemy configuration
+SQLALCHEMY_DATABASE_URI: 'sqlite:///users.db'
+SQLALCHEMY_TRACK_MODIFICATIONS: false

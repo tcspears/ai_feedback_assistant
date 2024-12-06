@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Essay Feedback Assistant</title>
+    {{ dropzone.load_css() }}
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Essay Feedback Assistant</h1>
+        <a href="{{ url_for('logout') }}">Logout</a>
+        {% if current_user.is_admin %}
+            <a href="{{ url_for('admin') }}">Admin Panel</a>
+        {% endif %}
+
+        <!-- Rubric Section -->
+        <div class="rubric-section">
+            <h2>Grading Rubric</h2>
+            <div id="rubricForm">
+                <div class="rubric-header">
+                    <input type="text" id="rubricName" placeholder="Rubric Name" required>
+                    <textarea id="assignmentDescription" class="criteria-input" placeholder="Enter assignment description..." required rows="3"></textarea>
+                </div>
+                <div id="criteriaContainer">
+                    <div class="criteria-entry">
+                        <div class="criteria-fields-container">
+                            <input type="text" class="criteria-name-input" placeholder="Section name (e.g., Overall Quality)" required>
+                            <textarea class="criteria-input" placeholder="Enter grading criteria..." required rows="3"></textarea>
+                        </div>
+                        <button type="button" class="remove-criteria" onclick="removeCriteria(this)">-</button>
+                    </div>
+                </div>
+                <button type="button" id="addCriteria" onclick="addCriteria()">+ Add Criteria</button>
+                <button type="button" id="saveRubric" onclick="saveRubric()">Save Rubric</button>
+            </div>
+
+            <!-- Rubric Selection -->
+            <div class="rubric-select">
+                <h3>Or select an existing rubric:</h3>
+                <select id="existingRubrics" onchange="loadRubric(this.value)">
+                    <option value="">Select a rubric...</option>
+                    {% for rubric in rubrics %}
+                    <option value="{{ rubric.id }}">{{ rubric.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- Model Selection -->
+        <div class="model-select-container">
+            <select id="modelSelect">
+                <option value="gpt-4o-mini">GPT-4o-mini</option>
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="o1-preview">O1-preview</option>
+                <option value="o1-mini">O1-mini</option>
+                <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
+                <option value="claude-3-5-haiku-latest">Claude 3 Haiku</option>
+            </select>
+        </div>
+        
+        <!-- File Upload -->
+        {{ dropzone.create(action=url_for('index')) }}
+        {{ dropzone.load_js() }}
+        {{ dropzone.config(custom_options="success: function(file, response) { if(response.redirect) { window.location.href = response.redirect; } }") }}
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script>
+        let currentRubricId = null;  // Add this to track which rubric is being edited
+
+        async function loadRubric(rubricId) {
+            if (!rubricId) return;
+            
+            try {
+                const response = await fetch(`/get_rubric/${rubricId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Store the current rubric ID
+                    currentRubricId = rubricId;
+                    
+                    // Populate the form fields
+                    document.getElementById('rubricName').value = data.rubric.name;
+                    document.getElementById('assignmentDescription').value = data.rubric.description;
+                    
+                    // Clear existing criteria
+                    const container = document.getElementById('criteriaContainer');
+                    container.innerHTML = '';
+                    
+                    // Add each criterion
+                    data.criteria.forEach(criterion => {
+                        const newEntry = document.createElement('div');
+                        newEntry.className = 'criteria-entry';
+                        newEntry.innerHTML = `
+                            <div class="criteria-fields-container">
+                                <input type="text" class="criteria-name-input" placeholder="Section name (e.g., Overall Quality)" required value="${criterion.section_name}">
+                                <textarea class="criteria-input" placeholder="Enter grading criteria..." required rows="3">${criterion.criteria_text}</textarea>
+                            </div>
+                            <button type="button" class="remove-criteria" onclick="removeCriteria(this)">-</button>
+                        `;
+                        container.appendChild(newEntry);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading rubric:', error);
+                alert('Error loading rubric');
+            }
+        }
+
+        function addCriteria() {
+            const container = document.getElementById('criteriaContainer');
+            const newEntry = document.createElement('div');
+            newEntry.className = 'criteria-entry';
+            newEntry.innerHTML = `
+                <div class="criteria-fields-container">
+                    <input type="text" class="criteria-name-input" placeholder="Section name (e.g., Overall Quality)" required>
+                    <textarea class="criteria-input" placeholder="Enter grading criteria..." required rows="3"></textarea>
+                </div>
+                <button type="button" class="remove-criteria" onclick="removeCriteria(this)">-</button>
+            `;
+            container.appendChild(newEntry);
+        }
+
+        function removeCriteria(button) {
+            const container = document.getElementById('criteriaContainer');
+            if (container.children.length > 1) {
+                button.parentElement.remove();
+            }
+        }
+
+        function saveRubric() {
+            const name = document.getElementById('rubricName').value;
+            const description = document.getElementById('assignmentDescription').value;
+            const criteriaEntries = document.getElementsByClassName('criteria-entry');
+            const criteria = Array.from(criteriaEntries).map(entry => ({
+                name: entry.querySelector('.criteria-name-input').value,
+                description: entry.querySelector('.criteria-input').value
+            }));
+
+            if (!name || !description || criteria.some(c => !c.name || !c.description)) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            fetch('/save_rubric', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    rubric_id: currentRubricId,  // Include the rubric ID if editing
+                    name: name,
+                    description: description,
+                    criteria: criteria
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(currentRubricId ? 'Rubric updated successfully!' : 'Rubric saved successfully!');
+                    location.reload();
+                } else {
+                    alert('Error saving rubric');
+                }
+            });
+        }
+
+        Dropzone.options.myDropzone = {
+            init: function() {
+                this.on("sending", function(file, xhr, formData) {
+                    const rubricId = document.getElementById('existingRubrics').value;
+                    if (!rubricId) {
+                        alert('Please select a rubric before uploading a file');
+                        this.removeFile(file);
+                        return;
+                    }
+                    formData.append("model", $("#modelSelect").val());
+                    formData.append("rubric_id", rubricId);
+                });
+
+                this.on("success", function(file, response) {
+                    if (response.redirect) {
+                        window.location.href = response.redirect;
+                    } else if (response.error) {
+                        alert('Error: ' + response.error);
+                        this.removeFile(file);
+                    }
+                });
+
+                this.on("error", function(file, errorMessage) {
+                    console.error('Upload error:', errorMessage);
+                    alert('Error uploading file: ' + errorMessage);
+                    this.removeFile(file);
+                });
+            },
+            maxFilesize: 10, // MB
+            acceptedFiles: '.pdf',
+            addRemoveLinks: true,
+            dictDefaultMessage: "Drop PDF files here or click to upload"
+        };
+    </script>
+</body>
+</html>

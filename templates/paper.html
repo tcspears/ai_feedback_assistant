@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Essay Feedback Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="sidebar">
+        <h3>{{ rubric_name }}</h3>
+        <div class="related-papers">
+            {% if related_papers %}
+                {% for paper in related_papers %}
+                    <a href="{{ url_for('paper', file_hash=paper[0]) }}" class="related-paper-link">
+                        {{ paper[1] }}
+                    </a>
+                {% endfor %}
+            {% else %}
+                <p>No other essays marked with this rubric</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="container">
+        <h1><a href="{{ url_for('index') }}">Essay Feedback Assistant</a></h1>
+        <div class="filename-container">
+            <h2 class="filename" id="filenameDisplay" onclick="editFilename()">{{ filename }}</h2>
+            <input type="text" id="filenameInput" value="{{ filename }}" style="display:none;" onblur="saveFilename()" onkeypress="checkEnter(event)">
+        </div>
+
+        <div class="navigation-links">
+            <a href="{{ url_for('logout') }}">Logout</a>
+            {% if current_user.is_admin %}
+                <a href="{{ url_for('admin') }}">Admin Panel</a>
+            {% endif %}
+        </div>
+
+        <div id="pdfViewer">
+            <h2>PDF Document</h2>
+            <iframe
+                src="{{ url_for('static', filename=pdf_path) }}"
+                width="100%"
+                height="600px"
+                style="border: 1px solid #333; border-radius: 4px;">
+            </iframe>
+        </div>
+
+        <!-- Evaluations Container -->
+        <div class="evaluations-container">
+            <!-- Essay Summary -->
+            {% for evaluation in evaluations if evaluation.section_name == '_summary' %}
+            <div class="evaluation-section">
+                <h3>Essay Summary</h3>
+                <div class="evaluation-content" id="evaluation-{{ evaluation.id }}">{{ evaluation.evaluation_text }}</div>
+                <button class="copy-btn" onclick="copyToClipboard('evaluation-{{ evaluation.id }}')">Copy</button>
+            </div>
+            {% endfor %}
+
+            <!-- Criteria Evaluations -->
+            {% for evaluation in evaluations if evaluation.section_name not in ['_summary', '_overall'] %}
+            <div class="evaluation-section">
+                <h3>{{ evaluation.section_name }}</h3>
+                <div class="evaluation-content" id="evaluation-{{ evaluation.id }}">
+                    {% for line in evaluation.evaluation_text.split('\n') %}
+                        {% if line.strip() %}
+                        <div class="feedback-line">
+                            <input type="checkbox" class="feedback-checkbox" 
+                                   data-section="{{ evaluation.section_name }}"
+                                   value="{{ line.strip() }}">
+                            <span>{{ line | safe }}</span>
+                        </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                <button class="copy-btn" onclick="copyToClipboard('evaluation-{{ evaluation.id }}')">Copy</button>
+            </div>
+            {% endfor %}
+
+            <!-- Additional Feedback -->
+            <div class="evaluation-section">
+                <h3>Additional Feedback</h3>
+                <textarea id="additionalFeedback" placeholder="Enter any additional feedback here...">{{ saved_additional_feedback or '' }}</textarea>
+                <button id="saveAdditionalFeedback" onclick="saveAdditionalFeedback()">Save Additional Feedback</button>
+            </div>
+
+            <!-- Consolidated Feedback -->
+            <div class="evaluation-section">
+                <h3>Consolidated Feedback</h3>
+                <div class="consolidated-feedback-controls">
+                    <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
+                        Generate Consolidated Feedback
+                    </button>
+                </div>
+                <div id="consolidatedFeedback" class="evaluation-content">
+                    {{ saved_consolidated_feedback or '' }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Full Text Section -->
+        <div class="full-text summary">
+            <h2 class="collapsible" onclick="toggleFullText()">Full Text</h2>
+            <div class="summary-content" id="fullTextContent" style="display: none;">
+                <div class="text-content">{{ full_text }}</div>
+                <button class="copy-btn" onclick="copyFullText()">Copy</button>
+            </div>
+        </div>
+
+        <!-- Chat Interface -->
+        <div id="chatInterface">
+            <h2>Chat about the Essay <button id="clearChat" onclick="clearChat()">Clear Chat</button></h2>
+            <div id="chatMessages">
+                {% for chat in chats %}
+                    <p><strong>You:</strong> {{ chat[0] }}</p>
+                    <p><strong>AI:</strong> {{ chat[1] }}</p>
+                {% endfor %}
+            </div>
+            <div id="chatInput">
+                <input type="text" id="userMessage" placeholder="Ask a question about the essay...">
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <!-- Include the existing JavaScript functions here -->
+    <script>
+    let lastChecked = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const checkboxes = document.querySelectorAll('.feedback-checkbox');
+        
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('click', function(e) {
+                if (!lastChecked) {
+                    lastChecked = checkbox;
+                    return;
+                }
+
+                if (e.shiftKey) {
+                    const checkboxes = document.querySelectorAll('.feedback-checkbox');
+                    const start = Array.from(checkboxes).indexOf(checkbox);
+                    const end = Array.from(checkboxes).indexOf(lastChecked);
+                    
+                    const [min, max] = [start, end].sort((a, b) => a - b);
+                    
+                    checkboxes.forEach((cb, i) => {
+                        if (i >= min && i <= max) {
+                            cb.checked = checkbox.checked;
+                        }
+                    });
+                }
+                
+                lastChecked = checkbox;
+            });
+        });
+    });
+
+    function sendMessage() {
+        const messageInput = document.getElementById('userMessage');
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        // Add user message to chat
+        const chatMessages = document.getElementById('chatMessages');
+        chatMessages.innerHTML += `<p><strong>You:</strong> ${message}</p>`;
+        messageInput.value = '';
+
+        // Send to server
+        fetch(`/chat/{{ file_hash }}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: message,
+                model: '{{ model }}'
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            chatMessages.innerHTML += `<p><strong>AI:</strong> ${data.response}</p>`;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            chatMessages.innerHTML += `<p class="error">Error sending message. Please try again.</p>`;
+        });
+    }
+
+    function clearChat() {
+        if (!confirm('Are you sure you want to clear the chat history?')) return;
+        
+        fetch(`/clear_chat/{{ file_hash }}`, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('chatMessages').innerHTML = '';
+            } else {
+                alert('Error clearing chat history');
+            }
+        });
+    }
+
+    function toggleFullText() {
+        const content = document.getElementById('fullTextContent');
+        content.style.display = content.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function copyToClipboard(id) {
+        const text = document.getElementById(id).innerText;
+        navigator.clipboard.writeText(text);
+    }
+
+    function copyFullText() {
+        const text = document.getElementById('fullTextContent').innerText;
+        navigator.clipboard.writeText(text);
+    }
+
+    // Add event listener for Enter key in chat input
+    document.getElementById('userMessage').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+
+    function editFilename() {
+        const displayElement = document.getElementById('filenameDisplay');
+        const inputElement = document.getElementById('filenameInput');
+        
+        displayElement.style.display = 'none';
+        inputElement.style.display = 'inline-block';
+        inputElement.focus();
+    }
+
+    function saveFilename() {
+        const displayElement = document.getElementById('filenameDisplay');
+        const inputElement = document.getElementById('filenameInput');
+        const newFilename = inputElement.value.trim();
+        
+        if (newFilename) {
+            fetch(`/update_filename/{{ file_hash }}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filename: newFilename
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayElement.textContent = newFilename;
+                    displayElement.style.display = 'inline-block';
+                    inputElement.style.display = 'none';
+                }
+            });
+        }
+    }
+
+    function checkEnter(event) {
+        if (event.key === 'Enter') {
+            saveFilename();
+        }
+    }
+
+    async function generateConsolidatedFeedback() {
+        // Collect all checked feedback
+        const selectedFeedback = {};
+        document.querySelectorAll('.feedback-checkbox:checked').forEach(checkbox => {
+            const section = checkbox.dataset.section;
+            if (!selectedFeedback[section]) {
+                selectedFeedback[section] = [];
+            }
+            selectedFeedback[section].push(checkbox.value);
+        });
+
+        // Get additional feedback
+        const additionalFeedback = document.getElementById('additionalFeedback').value;
+
+        // Show loading state
+        const button = document.getElementById('generateConsolidatedFeedback');
+        const originalText = button.textContent;
+        button.textContent = 'Generating...';
+        button.disabled = true;
+
+        try {
+            const response = await fetch('/generate_consolidated_feedback', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    selected_feedback: selectedFeedback,
+                    additional_feedback: additionalFeedback,
+                    model: '{{ model }}',
+                    file_hash: '{{ file_hash }}'
+                })
+            });
+
+            const data = await response.json();
+            document.getElementById('consolidatedFeedback').innerHTML = data.consolidated_feedback;
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error generating consolidated feedback');
+        } finally {
+            button.textContent = originalText;
+            button.disabled = false;
+        }
+    }
+
+    async function saveAdditionalFeedback() {
+        const additionalFeedback = document.getElementById('additionalFeedback').value;
+        const button = document.getElementById('saveAdditionalFeedback');
+        const originalText = button.textContent;
+        
+        button.textContent = 'Saving...';
+        button.disabled = true;
+        
+        try {
+            const response = await fetch('/save_additional_feedback/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    additional_feedback: additionalFeedback
+                })
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to save');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error saving additional feedback');
+        } finally {
+            button.textContent = originalText;
+            button.disabled = false;
+        }
+    }
+    </script>
+</body>
+</html>
