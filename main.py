@@ -20,6 +20,9 @@ from anthropic import Anthropic
 import anthropic
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import func
+import re
+
+
 
 def adapt_datetime(ts):
     return ts.isoformat()
@@ -153,11 +156,34 @@ def logout():
 def paper(file_hash):
     paper = Paper.query.filter_by(hash=file_hash).first_or_404()
     
-    # Get evaluations with their criteria
-    evaluations = (db.session.query(Evaluation, RubricCriteria)
-                  .join(RubricCriteria, Evaluation.criteria_id == RubricCriteria.id)
-                  .filter(Evaluation.paper_id == paper.id)
+    # Simplified query to get evaluations
+    evaluations = (Evaluation.query
+                  .filter_by(paper_id=paper.id)
+                  .order_by(Evaluation.criteria_id.nullsfirst())
                   .all())
+    
+    # Format evaluations for template
+    md = markdown.Markdown(extensions=['extra'])
+    formatted_evaluations = []
+    
+    # Process evaluations
+    for eval in evaluations:
+        if eval.criteria_id is None:
+            # Summary evaluation
+            formatted_evaluations.append({
+                'id': 'summary',
+                'section_name': '_summary',
+                'evaluation_text': Markup(md.convert(eval.evaluation_text))
+            })
+        else:
+            # Get criteria info
+            criteria = RubricCriteria.query.get(eval.criteria_id)
+            if criteria:
+                formatted_evaluations.append({
+                    'id': eval.id,
+                    'section_name': criteria.section_name,
+                    'evaluation_text': Markup(md.convert(eval.evaluation_text))
+                })
     
     # Get related papers
     related_papers = (Paper.query
@@ -167,30 +193,6 @@ def paper(file_hash):
                      .distinct()
                      .order_by(Paper.created_at.desc())
                      .all())
-    
-    # Format evaluations for template
-    md = markdown.Markdown(extensions=['extra'])
-    formatted_evaluations = []
-    
-    # Add summary evaluation if it exists
-    summary_eval = Evaluation.query.filter_by(
-        paper_id=paper.id,
-        criteria_id=None
-    ).first()
-    if summary_eval:
-        formatted_evaluations.append({
-            'id': 'summary',
-            'section_name': '_summary',
-            'evaluation_text': Markup(md.convert(summary_eval.evaluation_text))
-        })
-    
-    # Add criteria evaluations
-    for eval, criteria in evaluations:
-        formatted_evaluations.append({
-            'id': eval.id,
-            'section_name': criteria.section_name,
-            'evaluation_text': Markup(md.convert(eval.evaluation_text))
-        })
     
     # Get chat history
     chats = [(chat.user_message, chat.ai_response) for chat in 
@@ -206,8 +208,10 @@ def paper(file_hash):
     rubric_name = None
     if evaluations:
         first_eval = evaluations[0]
-        if first_eval[1] and first_eval[1].rubric:
-            rubric_name = first_eval[1].rubric.name
+        if first_eval.criteria_id:
+            criteria = RubricCriteria.query.get(first_eval.criteria_id)
+            if criteria and criteria.rubric:
+                rubric_name = criteria.rubric.name
     
     return render_template('paper.html',
                          filename=paper.filename,
@@ -220,7 +224,7 @@ def paper(file_hash):
                          rubric_name=rubric_name,
                          saved_additional_feedback=saved_feedback.additional_feedback if saved_feedback else None,
                          saved_consolidated_feedback=saved_feedback.consolidated_feedback if saved_feedback else None,
-                         pdf_path=paper.pdf_path.replace('static/', ''))  # Remove 'static/' from path if present
+                         pdf_path=paper.pdf_path.replace('static/', ''))
 
 @app.route('/chat/<file_hash>', methods=['POST'])
 @login_required
@@ -431,6 +435,16 @@ def generate_consolidated_feedback():
     
     paper = Paper.query.filter_by(hash=file_hash).first_or_404()
     
+    # Get the criteria names from the first evaluation's rubric
+    first_eval = Evaluation.query.filter_by(paper_id=paper.id).first()
+    if first_eval and first_eval.criteria_id:
+        criteria = RubricCriteria.query.filter_by(
+            rubric_id=RubricCriteria.query.get(first_eval.criteria_id).rubric_id
+        ).order_by(RubricCriteria.id).all()
+        criteria_names = [c.section_name for c in criteria]
+    else:
+        criteria_names = list(selected_feedback.keys())
+    
     # Format feedback text
     feedback_text = "Selected Feedback Points:\n\n"
     for section, points in selected_feedback.items():
@@ -441,13 +455,21 @@ def generate_consolidated_feedback():
         feedback_text += "=== Additional Feedback ===\n"
         feedback_text += additional_feedback + "\n"
 
-    # Generate consolidated feedback using the selected model
+    # Updated prompt with explicit section organization
     prompt = f"""Based on the following selected feedback points, generate a well-structured, 
-    cohesive but concise feedback statement for the student. Use bullet points where appropriate. 
-    Include both strengths and areas for improvement.
+    cohesive but comprehensive feedback statement for the student. 
+
+    Your feedback MUST be organized using these exact section headings in this order:
+    {', '.join(criteria_names)}
+
+    Under each section, include both strengths and areas for improvement where applicable.
+    Make sure each section is clearly marked with its heading.
+
+    Here are the feedback points to incorporate:
 
     {feedback_text}"""
 
+    # Generate consolidated feedback using the selected model
     if model.startswith('claude'):
         response = client_anthropic.messages.create(
             model=model,
@@ -510,6 +532,27 @@ def save_additional_feedback(file_hash):
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)})
 
+def remove_personal_identifiers(text):
+    """
+    Removes personally-identifying information from text.
+    Currently removes:
+    - Student ID numbers in the format B###### (e.g., B123456)
+    - Course codes in the format XXXX##### (e.g., COMP12345)
+    
+    Args:
+        text (str): The input text to process
+        
+    Returns:
+        str: Text with personal identifiers removed
+    """
+    # Remove student IDs (B######)
+    text = re.sub(r'B\d{6}', '[STUDENT_ID]', text)
+    
+    # Remove course codes (e.g., COMP12345)
+    text = re.sub(r'[A-Z]{4}\d{5}', '[COURSE_ID]', text)
+    
+    return text
+
 @app.route('/', methods=['GET', 'POST'])
 @login_required
 def index():
@@ -551,6 +594,9 @@ def index():
                     full_text = ""
                     for page in reader.pages:
                         full_text += page.extract_text()
+                
+                # Remove personal identifiers before storing
+                full_text = remove_personal_identifiers(full_text)
                 
                 # Create new paper
                 new_paper = Paper(
@@ -670,6 +716,9 @@ def init_db():
         create_admin_user() 
 
 if __name__ == '__main__':
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Database URL: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    print(f"Expected database location: {os.path.join(os.getcwd(), 'users.db')}")
     init_db()
-    app.run(debug=True)
+    # app.run(debug=True)
     app.run(host='0.0.0.0', port=80)
