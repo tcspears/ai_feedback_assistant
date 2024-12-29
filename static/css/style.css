@@ -752,3 +752,54 @@ select:disabled {
     background-color: var(--border-color);
     cursor: not-allowed;
 }
+
+/* Add these new styles */
+.feedback-textarea {
+    width: 100%;
+    min-height: 200px;
+    padding: 10px;
+    background: var(--summary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    resize: vertical;
+    margin-bottom: 10px;
+    font-family: inherit;
+    line-height: 1.5;
+    white-space: pre-wrap;  /* Preserve line breaks and spacing */
+    tab-size: 4;           /* Set tab size */
+}
+
+.save-feedback-btn {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    margin-bottom: 10px;
+}
+
+.save-feedback-btn:hover {
+    background-color: var(--hover-color);
+}
+
+.save-status {
+    font-size: 0.9em;
+    margin-top: 5px;
+    height: 20px;
+    color: #4CAF50;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.save-status.show {
+    opacity: 1;
+}
+
+/* Remove the old checkbox-related styles */
+.feedback-line,
+.feedback-checkbox {
+    display: none;
+}

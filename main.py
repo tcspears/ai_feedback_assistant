@@ -169,20 +169,20 @@ def paper(file_hash):
     # Process evaluations
     for eval in evaluations:
         if eval.criteria_id is None:
-            # Summary evaluation
+            # Summary evaluation - convert markdown to HTML
             formatted_evaluations.append({
                 'id': 'summary',
                 'section_name': '_summary',
                 'evaluation_text': Markup(md.convert(eval.evaluation_text))
             })
         else:
-            # Get criteria info
+            # Get criteria info - keep raw markdown
             criteria = RubricCriteria.query.get(eval.criteria_id)
             if criteria:
                 formatted_evaluations.append({
                     'id': eval.id,
                     'section_name': criteria.section_name,
-                    'evaluation_text': Markup(md.convert(eval.evaluation_text))
+                    'evaluation_text': eval.evaluation_text
                 })
     
     # Get related papers
@@ -198,7 +198,7 @@ def paper(file_hash):
     chats = [(chat.user_message, chat.ai_response) for chat in 
              Chat.query.filter_by(paper_id=paper.id).order_by(Chat.created_at).all()]
     
-    # Get saved feedback
+    # Get saved feedback (don't convert to HTML)
     saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
     
     # Format related papers for template
@@ -374,28 +374,35 @@ Criteria: {criteria_text}
 Essay text:
 {text}
 
-Please provide a detailed evaluation focusing specifically on the {section_name} criterion described above
-"""
+Please provide a detailed evaluation focusing specifically on the {section_name} criterion described above. Format your response in Markdown, using:
+- Headers (##) for main sections
+- Lists (- or *) for key points
+- Bold (**) for emphasis on important elements
+- Line breaks between paragraphs"""
 
     try:
         if model.startswith('claude'):
             response = client_anthropic.messages.create(
                 model=model,
-                system="You are an experienced essay evaluator providing detailed feedback.",
+                system="You are an experienced essay evaluator providing detailed feedback. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate.",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1000
             )
             evaluation = response.content[0].text.strip()
+            print(f"Claude API Response for {section_name}:\n{evaluation}\n{'='*50}")
         else:
             response = client_openai.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "You are an experienced essay evaluator providing detailed feedback."},
+                    {"role": "system", "content": "You are an experienced essay evaluator providing detailed feedback. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."},
                     {"role": "user", "content": prompt}
                 ]
             )
             evaluation = response.choices[0].message.content.strip()
+            print(f"OpenAI API Response for {section_name}:\n{evaluation}\n{'='*50}")
         
+        # Strip any HTML tags that might still be present
+        evaluation = re.sub(r'<[^>]+>', '', evaluation)
         return evaluation
     
     except Exception as e:
@@ -428,44 +435,56 @@ def get_rubric(rubric_id):
 @login_required
 def generate_consolidated_feedback():
     data = request.json
-    selected_feedback = data['selected_feedback']
     additional_feedback = data['additional_feedback']
     model = data['model']
     file_hash = data['file_hash']
     
     paper = Paper.query.filter_by(hash=file_hash).first_or_404()
     
-    # Get the criteria names from the first evaluation's rubric
-    first_eval = Evaluation.query.filter_by(paper_id=paper.id).first()
-    if first_eval and first_eval.criteria_id:
-        criteria = RubricCriteria.query.filter_by(
-            rubric_id=RubricCriteria.query.get(first_eval.criteria_id).rubric_id
-        ).order_by(RubricCriteria.id).all()
-        criteria_names = [c.section_name for c in criteria]
-    else:
-        criteria_names = list(selected_feedback.keys())
+    # Get all evaluations for this paper (excluding summary)
+    evaluations = (Evaluation.query
+                  .join(RubricCriteria)
+                  .filter(
+                      Evaluation.paper_id == paper.id,
+                      Evaluation.criteria_id.isnot(None)
+                  )
+                  .order_by(RubricCriteria.id)
+                  .all())
     
     # Format feedback text
-    feedback_text = "Selected Feedback Points:\n\n"
-    for section, points in selected_feedback.items():
-        feedback_text += f"=== {section} ===\n"
-        feedback_text += "\n".join(points) + "\n\n"
+    feedback_text = "Criteria-Specific Feedback:\n\n"
+    for eval in evaluations:
+        criteria = RubricCriteria.query.get(eval.criteria_id)
+        feedback_text += f"=== {criteria.section_name} ===\n"
+        feedback_text += f"{eval.evaluation_text}\n\n"
     
     if additional_feedback:
         feedback_text += "=== Additional Feedback ===\n"
         feedback_text += additional_feedback + "\n"
 
+    # Get the criteria names for structuring the response
+    criteria_names = [RubricCriteria.query.get(eval.criteria_id).section_name 
+                     for eval in evaluations]
+
     # Updated prompt with explicit section organization
-    prompt = f"""Based on the following selected feedback points, generate a well-structured, 
-    cohesive but comprehensive feedback statement for the student. 
+    prompt = f"""Your task is to consolidate multiple pieces of written feedback into a single, cohesive statement to the student. Follow these guidelines:
+
+    1. **Preserve Original Language**: Retain the unique wording, tone, and phrasing wherever possible.
+    2. **Eliminate Redundancy**: If multiple pieces of feedback repeat the same point, mention it only once.
+    3. **Combine and Organize**: Merge related ideas logically, ensuring the statement flows smoothly.
+    4. **Maintain Clarity**: The final statement should be easily understood and well-structured.
+    5. **Brevity Without Omissions**: While removing repeated points, do not omit critical information or nuances.
+
+    Your output should be one concise piece of feedback that accurately reflects all key points of the original sources. Format your response in Markdown, using:
+        - Headers (##) for main sections
+        - Lists (- or *) for key points
+        - Bold (**) for emphasis on important elements
+        - Line breaks between paragraphs
 
     Your feedback MUST be organized using these exact section headings in this order:
     {', '.join(criteria_names)}
 
-    Under each section, include both strengths and areas for improvement where applicable.
-    Make sure each section is clearly marked with its heading.
-
-    Here are the feedback points to incorporate:
+    Here are the feedback sections to incorporate:
 
     {feedback_text}"""
 
@@ -473,7 +492,7 @@ def generate_consolidated_feedback():
     if model.startswith('claude'):
         response = client_anthropic.messages.create(
             model=model,
-            system="You are an experienced essay grader providing constructive feedback.",
+            system="You are a helpful writing assistant.",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1000
         )
@@ -482,7 +501,7 @@ def generate_consolidated_feedback():
         response = client_openai.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": "You are an experienced essay grader providing constructive feedback."},
+                {"role": "system", "content": "You are a helpful writing assistant."},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -678,8 +697,10 @@ def admin():
                     if os.path.exists(paper.pdf_path):
                         os.remove(paper.pdf_path)
                 
-                # Delete all chats and papers
+                # Delete all related records first
                 Chat.query.delete()
+                Evaluation.query.delete()
+                SavedFeedback.query.delete()
                 Paper.query.delete()
                 db.session.commit()
                 flash('All articles and chats have been deleted.')
@@ -692,10 +713,15 @@ def admin():
                 if os.path.exists(paper.pdf_path):
                     os.remove(paper.pdf_path)
                 
-                # Delete paper and associated chats
+                # Delete related records first
+                Chat.query.filter_by(paper_id=paper.id).delete()
+                Evaluation.query.filter_by(paper_id=paper.id).delete()
+                SavedFeedback.query.filter_by(paper_id=paper.id).delete()
+                
+                # Delete paper
                 db.session.delete(paper)
                 db.session.commit()
-                flash('Article and associated chats have been deleted.')
+                flash('Article and associated data have been deleted.')
                 
         except Exception as e:
             db.session.rollback()
@@ -714,6 +740,24 @@ def init_db():
     with app.app_context():
         db.create_all()
         create_admin_user() 
+
+@app.route('/save_feedback', methods=['POST'])
+@login_required
+def save_feedback():
+    try:
+        data = request.json
+        evaluation_id = data['evaluation_id']
+        feedback_text = data['feedback_text']
+        
+        # Get and update the evaluation
+        evaluation = Evaluation.query.get_or_404(evaluation_id)
+        evaluation.evaluation_text = feedback_text
+        db.session.commit()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")

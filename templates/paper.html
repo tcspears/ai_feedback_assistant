@@ -63,19 +63,15 @@
             {% for evaluation in evaluations if evaluation.section_name not in ['_summary', '_overall'] %}
             <div class="evaluation-section">
                 <h3>{{ evaluation.section_name }}</h3>
-                <div class="evaluation-content" id="evaluation-{{ evaluation.id }}">
-                    {% for line in evaluation.evaluation_text.split('\n') %}
-                        {% if line.strip() %}
-                        <div class="feedback-line">
-                            <input type="checkbox" class="feedback-checkbox" 
-                                   data-section="{{ evaluation.section_name }}"
-                                   value="{{ line.strip() }}">
-                            <span>{{ line | safe }}</span>
-                        </div>
-                        {% endif %}
-                    {% endfor %}
+                <div class="evaluation-content">
+                    <textarea 
+                        class="feedback-textarea" 
+                        id="evaluation-{{ evaluation.id }}"
+                        data-evaluation-id="{{ evaluation.id }}"
+                        spellcheck="true">{{ evaluation.evaluation_text }}</textarea>
+                    <button class="save-feedback-btn" onclick="saveFeedback({{ evaluation.id }})">Save Changes</button>
+                    <div class="save-status" id="save-status-{{ evaluation.id }}"></div>
                 </div>
-                <button class="copy-btn" onclick="copyToClipboard('evaluation-{{ evaluation.id }}')">Copy</button>
             </div>
             {% endfor %}
 
@@ -95,7 +91,7 @@
                     </button>
                 </div>
                 <div id="consolidatedFeedback" class="evaluation-content">
-                    {{ saved_consolidated_feedback or '' }}
+                    {{ saved_consolidated_feedback if saved_consolidated_feedback }}
                 </div>
             </div>
         </div>
@@ -344,6 +340,48 @@
         } finally {
             button.textContent = originalText;
             button.disabled = false;
+        }
+    }
+
+    async function saveFeedback(evaluationId) {
+        const textarea = document.getElementById(`evaluation-${evaluationId}`);
+        const saveStatus = document.getElementById(`save-status-${evaluationId}`);
+        const button = textarea.nextElementSibling; // Get the save button
+        
+        // Disable button and show saving status
+        button.disabled = true;
+        button.textContent = 'Saving...';
+        
+        try {
+            const response = await fetch('/save_feedback', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    evaluation_id: evaluationId,
+                    feedback_text: textarea.value
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                saveStatus.textContent = 'Changes saved successfully';
+                saveStatus.classList.add('show');
+                setTimeout(() => {
+                    saveStatus.classList.remove('show');
+                }, 3000);
+            } else {
+                throw new Error(data.error || 'Failed to save changes');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            saveStatus.textContent = 'Error saving changes';
+            saveStatus.style.color = '#f44336';
+            saveStatus.classList.add('show');
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Save Changes';
         }
     }
     </script>
