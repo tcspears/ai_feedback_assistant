@@ -82,10 +82,21 @@
                 <button id="saveAdditionalFeedback" onclick="saveAdditionalFeedback()">Save Additional Feedback</button>
             </div>
 
+            <!-- Numerical Mark -->
+            <div class="evaluation-section">
+                <h3>Numerical Mark</h3>
+                <div class="mark-input-container">
+                    <input type="number" id="numericalMark" min="0" max="100" step="0.5" 
+                           value="{{ saved_feedback.mark if saved_feedback and saved_feedback.mark }}"
+                           placeholder="Enter mark (0-100)">
+                    <button id="saveMark" onclick="saveMark()">Save Mark</button>
+                </div>
+            </div>
+
             <!-- Consolidated Feedback -->
             <div class="evaluation-section">
                 <h3>Consolidated Feedback</h3>
-                <div class="consolidated-feedback-controls" style="display: flex; align-items: center;">
+                <div class="consolidated-feedback-controls">
                     <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
                         Generate Consolidated Feedback
                     </button>
@@ -95,6 +106,13 @@
                             <span class="slider round"></span>
                         </label>
                         <span class="toggle-label">Show Markdown</span>
+                    </div>
+                    <div class="toggle-container">
+                        <label class="switch">
+                            <input type="checkbox" id="alignToMarkToggle">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-label">Align language to mark</span>
                     </div>
                 </div>
                 <!-- Rendered markdown view -->
@@ -284,6 +302,8 @@
         button.disabled = true;
 
         const additionalFeedback = document.getElementById('additionalFeedback').value;
+        const alignToMark = document.getElementById('alignToMarkToggle').checked;
+        const mark = document.getElementById('numericalMark').value;
         
         try {
             const response = await fetch('/generate_consolidated_feedback', {
@@ -294,12 +314,13 @@
                 body: JSON.stringify({
                     additional_feedback: additionalFeedback,
                     model: '{{ model }}',
-                    file_hash: '{{ file_hash }}'
+                    file_hash: '{{ file_hash }}',
+                    align_to_mark: alignToMark,
+                    mark: parseFloat(mark)
                 })
             });
 
             const data = await response.json();
-            // Update both views
             document.getElementById('consolidatedFeedbackRaw').value = data.consolidated_feedback;
             document.getElementById('consolidatedFeedback').innerHTML = marked.parse(data.consolidated_feedback);
         } catch (error) {
@@ -396,6 +417,38 @@
         } else {
             renderedView.style.display = 'block';
             rawView.style.display = 'none';
+        }
+    }
+
+    async function saveMark() {
+        const mark = document.getElementById('numericalMark').value;
+        const button = document.getElementById('saveMark');
+        const originalText = button.textContent;
+        
+        button.textContent = 'Saving...';
+        button.disabled = true;
+        
+        try {
+            const response = await fetch('/save_mark/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    mark: parseFloat(mark)
+                })
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to save mark');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error saving mark');
+        } finally {
+            button.textContent = originalText;
+            button.disabled = false;
         }
     }
     </script>

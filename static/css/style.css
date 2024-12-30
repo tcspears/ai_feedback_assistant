@@ -876,3 +876,80 @@ input:checked + .slider:before {
     border: 1px solid var(--border-color);
     border-radius: 4px;
 }
+
+/* Add these new styles */
+.grade-descriptors-section {
+    margin: 30px 0;
+    padding: 20px;
+    background: var(--container-bg);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.grade-descriptors-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+}
+
+.grade-descriptors-table th,
+.grade-descriptors-table td {
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    text-align: left;
+}
+
+.descriptor-textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 8px;
+    background: var(--summary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    resize: vertical;
+}
+
+.save-descriptors-btn {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.save-descriptors-btn:hover {
+    background-color: var(--hover-color);
+}
+
+.mark-input-container {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 10px;
+}
+
+#numericalMark {
+    width: 120px;
+    padding: 8px;
+    background: var(--summary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+}
+
+#saveMark {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+#saveMark:hover {
+    background-color: var(--hover-color);
+}

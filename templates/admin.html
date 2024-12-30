@@ -62,5 +62,32 @@
             <input type="submit" value="Delete Article and Chats">
         </form>
     </div>
+    <div class="grade-descriptors-section">
+        <h2>Grade Descriptors</h2>
+        <form method="POST" id="gradeDescriptorsForm">
+            <input type="hidden" name="action" value="save_descriptors">
+            <table class="grade-descriptors-table">
+                <thead>
+                    <tr>
+                        <th>Mark Range</th>
+                        <th>Descriptor</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for range in [(90,100), (80,89), (70,79), (60,69), (50,59), (40,49), (30,39), (20,29), (10,19), (0,9)] %}
+                    <tr>
+                        <td>{{ range[0] }}-{{ range[1] }}%</td>
+                        <td>
+                            <textarea name="descriptor_{{ range[0] }}_{{ range[1] }}" 
+                                    class="descriptor-textarea"
+                                    rows="3">{{ descriptors.get((range[0], range[1]), '') }}</textarea>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <button type="submit" class="save-descriptors-btn">Save Grade Descriptors</button>
+        </form>
+    </div>
 </body>
 </html>

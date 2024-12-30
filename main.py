@@ -102,12 +102,20 @@ class Chat(db.Model):
     ai_response = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=func.now())
 
+class GradeDescriptors(db.Model):
+    __tablename__ = 'grade_descriptors'
+    id = db.Column(db.Integer, primary_key=True)
+    range_start = db.Column(db.Integer, nullable=False)
+    range_end = db.Column(db.Integer, nullable=False)
+    descriptor_text = db.Column(db.Text, nullable=False)
+
 class SavedFeedback(db.Model):
     __tablename__ = 'saved_feedback'
     id = db.Column(db.Integer, primary_key=True)
     paper_id = db.Column(db.Integer, db.ForeignKey('papers.id'), nullable=False)
     additional_feedback = db.Column(db.Text)
     consolidated_feedback = db.Column(db.Text)
+    mark = db.Column(db.Float)
     updated_at = db.Column(db.DateTime, nullable=False, default=func.now())
 
 def create_admin_user(username="admin", password="admin"):
@@ -228,6 +236,7 @@ def paper(file_hash):
                          file_hash=file_hash,
                          related_papers=formatted_related,
                          rubric_name=rubric_name,
+                         saved_feedback=saved_feedback,
                          saved_additional_feedback=saved_feedback.additional_feedback if saved_feedback else None,
                          saved_consolidated_feedback=saved_feedback.consolidated_feedback if saved_feedback else None,
                          pdf_path=paper.pdf_path.replace('static/', ''))
@@ -241,32 +250,7 @@ def chat(file_hash):
 
     paper = Paper.query.filter_by(hash=file_hash).first_or_404()
     
-    # Get all evaluations including summary
-    evaluations = (db.session.query(
-        Evaluation, RubricCriteria
-    ).outerjoin(
-        RubricCriteria, 
-        Evaluation.criteria_id == RubricCriteria.id
-    ).filter(
-        Evaluation.paper_id == paper.id
-    ).order_by(
-        Evaluation.criteria_id
-    ).all())
-    
-    # Format evaluations text
-    evaluations_text = "\n\n".join([
-        f"=== {crit.section_name if crit else 'Summary'} ===\n{eval.evaluation_text}"
-        for eval, crit in evaluations
-    ])
-
-    system_message = f"""You are an AI assistant specialized in discussing essays. You have access to:
-1. The full essay text
-2. A comprehensive set of evaluations for different aspects of the essay
-3. An overall evaluation
-
-Here are all the evaluations:
-
-{evaluations_text}"""
+    system_message = """You are an AI assistant specialized in discussing essays. You have access to the full essay text. Please help answer any questions about the essay."""
 
     # Generate AI response using existing client logic
     if model.startswith('claude'):
@@ -275,11 +259,13 @@ Here are all the evaluations:
             system=system_message,
             messages=[{
                 "role": "user",
-                "content": f"""Based on the essay and its evaluations above, please answer the following question:
+                "content": f"""Here is the essay text:
 
-{user_message}
+{paper.full_text}
 
-Note: When referring to specific parts of the evaluations, please mention which section you're drawing from."""
+Based on this essay, please answer the following question:
+
+{user_message}"""
             }],
             max_tokens=1000
         )
@@ -289,11 +275,13 @@ Note: When referring to specific parts of the evaluations, please mention which 
             model=model,
             messages=[
                 {"role": "system", "content": system_message},
-                {"role": "user", "content": f"""Based on the essay and its evaluations above, please answer the following question:
+                {"role": "user", "content": f"""Here is the essay text:
 
-{user_message}
+{paper.full_text}
 
-Note: When referring to specific parts of the evaluations, please mention which section you're drawing from."""}
+Based on this essay, please answer the following question:
+
+{user_message}"""}
             ]
         )
         ai_message = response.choices[0].message.content.strip()
@@ -317,6 +305,7 @@ def clear_chat(file_hash):
     db.session.commit()
     return jsonify({"success": True})
 
+
 @app.route('/update_filename/<file_hash>', methods=['POST'])
 @login_required
 def update_filename(file_hash):
@@ -328,6 +317,7 @@ def update_filename(file_hash):
     db.session.commit()
     
     return jsonify({"success": True})
+
 
 @app.route('/save_rubric', methods=['POST'])
 @login_required
@@ -368,6 +358,7 @@ def save_rubric():
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)})
+
 
 def generate_evaluation(text, section_name, criteria_text, model):
     """Generate an evaluation for a section of text using the specified AI model."""
@@ -437,6 +428,38 @@ def get_rubric(rubric_id):
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
+
+@app.route('/save_mark/<file_hash>', methods=['POST'])
+@login_required
+def save_mark(file_hash):
+    try:
+        data = request.json
+        mark = data['mark']
+        
+        if not (0 <= mark <= 100):
+            return jsonify({"success": False, "error": "Mark must be between 0 and 100"})
+        
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+        
+        if saved_feedback:
+            saved_feedback.mark = mark
+            saved_feedback.updated_at = datetime.now()
+        else:
+            saved_feedback = SavedFeedback(
+                paper_id=paper.id,
+                mark=mark
+            )
+            db.session.add(saved_feedback)
+        
+        db.session.commit()
+        return jsonify({"success": True})
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+
 @app.route('/generate_consolidated_feedback', methods=['POST'])
 @login_required
 def generate_consolidated_feedback():
@@ -444,6 +467,8 @@ def generate_consolidated_feedback():
     additional_feedback = data['additional_feedback']
     model = data['model']
     file_hash = data['file_hash']
+    align_to_mark = data.get('align_to_mark', False)
+    mark = data.get('mark')
     
     paper = Paper.query.filter_by(hash=file_hash).first_or_404()
     
@@ -472,16 +497,43 @@ def generate_consolidated_feedback():
     criteria_names = [RubricCriteria.query.get(eval.criteria_id).section_name 
                      for eval in evaluations]
 
-    # Updated prompt with explicit section organization
-    prompt = f"""Your task is to consolidate multiple pieces of written feedback into a single, cohesive statement to the student. Follow these guidelines:
+    # Get grade descriptors if alignment is requested
+    descriptors_text = ""
+    if align_to_mark and mark is not None:
+        try:
+            mark_float = float(mark)
+            descriptor = (GradeDescriptors.query
+                        .filter(GradeDescriptors.range_start <= mark_float,
+                               GradeDescriptors.range_end >= mark_float)
+                        .first())
+            if descriptor:
+                descriptors_text = descriptor.descriptor_text
+            else:
+                print(f"No descriptor found for mark {mark_float}")
+        except Exception as e:
+            print(f"Error processing mark {mark}: {str(e)}")
+            # Default to preserve original language if there's an error
+            align_to_mark = False
 
-    1. **Preserve Original Language**: Retain the unique wording, tone, and phrasing wherever possible.
+    # Updated prompt with conditional language alignment
+    preserve_language_instruction = (
+        "**Align to Grade Descriptors**: You should strive to balance retaining the unique wording, "
+        f"tone, and phrasing wherever possible while also ensuring alignment to the specific language "
+        f"used in the marking descriptors for this essay's mark. For this essay, those descriptors "
+        f"are: {descriptors_text}"
+    ) if align_to_mark and descriptors_text else (
+        "**Preserve Original Language**: Retain the unique wording, tone, and phrasing wherever possible"
+    )
+
+    prompt = f"""Your task is to combine multiple pieces of written feedback into a single, cohesive statement to the student. Follow these guidelines:
+
+    1. {preserve_language_instruction}
     2. **Eliminate Redundancy**: If multiple pieces of feedback repeat the same point, mention it only once.
     3. **Combine and Organize**: Merge related ideas logically, ensuring the statement flows smoothly.
     4. **Maintain Clarity**: The final statement should be easily understood and well-structured.
-    5. **Brevity Without Omissions**: While removing repeated points, do not omit critical information or nuances.
+    5. **Avoid Omitting Relevant Information**: While you *should* remove repeated or redundant information, do not omit critical information or detail. This is especially important for the feedback listed in the 'Additional Feedback' section. This text should be incorporated as closely as possible to the original text.
 
-    Your output should be one concise piece of feedback that accurately reflects all key points of the original sources. Format your response in Markdown, using:
+    Your output should be one comprehensive piece of feedback that accurately reflects all key points of the original sources. Format your response in Markdown, using:
         - Headers (##) for main sections
         - Lists (- or *) for key points
         - Bold (**) for emphasis on important elements
@@ -519,11 +571,13 @@ def generate_consolidated_feedback():
         saved_feedback.additional_feedback = additional_feedback
         saved_feedback.consolidated_feedback = consolidated_feedback
         saved_feedback.updated_at = datetime.now()
+        # Preserve the existing mark if there is one
     else:
         saved_feedback = SavedFeedback(
             paper_id=paper.id,
             additional_feedback=additional_feedback,
-            consolidated_feedback=consolidated_feedback
+            consolidated_feedback=consolidated_feedback,
+            mark=mark if mark is not None else None  # Include mark if provided
         )
         db.session.add(saved_feedback)
     
@@ -729,12 +783,39 @@ def admin():
                 db.session.commit()
                 flash('Article and associated data have been deleted.')
                 
+            elif action == 'save_descriptors':
+                # Delete existing descriptors
+                GradeDescriptors.query.delete()
+                
+                # Add new descriptors
+                ranges = [(90,100), (80,89), (70,79), (60,69), (50,59), 
+                         (40,49), (30,39), (20,29), (10,19), (0,9)]
+                
+                for start, end in ranges:
+                    descriptor_text = request.form.get(f'descriptor_{start}_{end}')
+                    if descriptor_text:
+                        descriptor = GradeDescriptors(
+                            range_start=start,
+                            range_end=end,
+                            descriptor_text=descriptor_text
+                        )
+                        db.session.add(descriptor)
+                
+                db.session.commit()
+                flash('Grade descriptors saved successfully')
+                
         except Exception as e:
             db.session.rollback()
             flash(f'Error: {str(e)}')
     
+    # Get existing descriptors for display
+    descriptors = {
+        (d.range_start, d.range_end): d.descriptor_text
+        for d in GradeDescriptors.query.all()
+    }
+    
     users = User.query.all()
-    return render_template('admin.html', users=users)
+    return render_template('admin.html', users=users, descriptors=descriptors)
 
 # Update the login manager loader function
 @login_manager.user_loader
