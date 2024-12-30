@@ -85,14 +85,24 @@
             <!-- Consolidated Feedback -->
             <div class="evaluation-section">
                 <h3>Consolidated Feedback</h3>
-                <div class="consolidated-feedback-controls">
+                <div class="consolidated-feedback-controls" style="display: flex; align-items: center;">
                     <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
                         Generate Consolidated Feedback
                     </button>
+                    <div class="toggle-container">
+                        <label class="switch">
+                            <input type="checkbox" id="showMarkdownToggle" onchange="toggleMarkdownView()">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-label">Show Markdown</span>
+                    </div>
                 </div>
-                <div id="consolidatedFeedback" class="evaluation-content">
-                    {{ saved_consolidated_feedback if saved_consolidated_feedback }}
+                <!-- Rendered markdown view -->
+                <div id="consolidatedFeedback" class="evaluation-content markdown-rendered">
+                    {{ saved_consolidated_feedback | markdown if saved_consolidated_feedback }}
                 </div>
+                <!-- Raw markdown view -->
+                <textarea id="consolidatedFeedbackRaw" class="feedback-textarea" style="display: none;">{{ saved_consolidated_feedback }}</textarea>
             </div>
         </div>
 
@@ -122,6 +132,7 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- Include the existing JavaScript functions here -->
     <script>
     let lastChecked = null;
@@ -267,25 +278,13 @@
     }
 
     async function generateConsolidatedFeedback() {
-        // Collect all checked feedback
-        const selectedFeedback = {};
-        document.querySelectorAll('.feedback-checkbox:checked').forEach(checkbox => {
-            const section = checkbox.dataset.section;
-            if (!selectedFeedback[section]) {
-                selectedFeedback[section] = [];
-            }
-            selectedFeedback[section].push(checkbox.value);
-        });
-
-        // Get additional feedback
-        const additionalFeedback = document.getElementById('additionalFeedback').value;
-
-        // Show loading state
         const button = document.getElementById('generateConsolidatedFeedback');
         const originalText = button.textContent;
         button.textContent = 'Generating...';
         button.disabled = true;
 
+        const additionalFeedback = document.getElementById('additionalFeedback').value;
+        
         try {
             const response = await fetch('/generate_consolidated_feedback', {
                 method: 'POST',
@@ -293,7 +292,6 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    selected_feedback: selectedFeedback,
                     additional_feedback: additionalFeedback,
                     model: '{{ model }}',
                     file_hash: '{{ file_hash }}'
@@ -301,7 +299,9 @@
             });
 
             const data = await response.json();
-            document.getElementById('consolidatedFeedback').innerHTML = data.consolidated_feedback;
+            // Update both views
+            document.getElementById('consolidatedFeedbackRaw').value = data.consolidated_feedback;
+            document.getElementById('consolidatedFeedback').innerHTML = marked.parse(data.consolidated_feedback);
         } catch (error) {
             console.error('Error:', error);
             alert('Error generating consolidated feedback');
@@ -382,6 +382,20 @@
         } finally {
             button.disabled = false;
             button.textContent = 'Save Changes';
+        }
+    }
+
+    function toggleMarkdownView() {
+        const showMarkdown = document.getElementById('showMarkdownToggle').checked;
+        const renderedView = document.getElementById('consolidatedFeedback');
+        const rawView = document.getElementById('consolidatedFeedbackRaw');
+        
+        if (showMarkdown) {
+            renderedView.style.display = 'none';
+            rawView.style.display = 'block';
+        } else {
+            renderedView.style.display = 'block';
+            rawView.style.display = 'none';
         }
     }
     </script>

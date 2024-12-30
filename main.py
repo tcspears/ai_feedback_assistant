@@ -126,6 +126,12 @@ def create_admin_user(username="admin", password="admin"):
         else:
             print(f"Admin user '{username}' already exists")
 
+@app.template_filter('markdown')
+def markdown_filter(text):
+    if text:
+        return Markup(markdown.markdown(text, extensions=['extra']))
+    return ''
+
 # Example of refactored route using SQLAlchemy
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -492,7 +498,7 @@ def generate_consolidated_feedback():
     if model.startswith('claude'):
         response = client_anthropic.messages.create(
             model=model,
-            system="You are a helpful writing assistant.",
+            system="You are a helpful writing assistant. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate.",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1000
         )
@@ -501,7 +507,7 @@ def generate_consolidated_feedback():
         response = client_openai.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": "You are a helpful writing assistant."},
+                {"role": "system", "content": "You are a helpful writing assistant. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -758,6 +764,7 @@ def save_feedback():
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)})
+
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")
