@@ -98,22 +98,31 @@
             <div class="evaluation-section">
                 <h3>Consolidated Feedback</h3>
                 <div class="consolidated-feedback-controls">
-                    <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
-                        Generate Consolidated Feedback
-                    </button>
-                    <div class="toggle-container">
-                        <label class="switch">
-                            <input type="checkbox" id="showMarkdownToggle" onchange="toggleMarkdownView()">
-                            <span class="slider round"></span>
-                        </label>
-                        <span class="toggle-label">Show Markdown</span>
+                    <!-- Buttons on first line -->
+                    <div class="button-row">
+                        <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
+                            Generate Consolidated Feedback
+                        </button>
+                        <button id="saveConsolidatedFeedback" onclick="saveConsolidatedFeedback()" style="display: none;">
+                            Save Feedback
+                        </button>
                     </div>
-                    <div class="toggle-container">
-                        <label class="switch">
-                            <input type="checkbox" id="alignToMarkToggle">
-                            <span class="slider round"></span>
-                        </label>
-                        <span class="toggle-label">Align language to mark</span>
+                    <!-- Toggles on second line -->
+                    <div class="toggle-row">
+                        <div class="toggle-container">
+                            <label class="switch">
+                                <input type="checkbox" id="showMarkdownToggle" onchange="toggleMarkdownView()">
+                                <span class="slider round"></span>
+                            </label>
+                            <span class="toggle-label">Show Markdown</span>
+                        </div>
+                        <div class="toggle-container">
+                            <label class="switch">
+                                <input type="checkbox" id="alignToMarkToggle">
+                                <span class="slider round"></span>
+                            </label>
+                            <span class="toggle-label">Align language to mark</span>
+                        </div>
                     </div>
                 </div>
                 <!-- Rendered markdown view -->
@@ -324,6 +333,11 @@
             const data = await response.json();
             document.getElementById('consolidatedFeedbackRaw').value = data.consolidated_feedback;
             document.getElementById('consolidatedFeedback').innerHTML = marked.parse(data.consolidated_feedback);
+            
+            // Show save button if in markdown view
+            if (document.getElementById('showMarkdownToggle').checked) {
+                document.getElementById('saveConsolidatedFeedback').style.display = 'inline-block';
+            }
         } catch (error) {
             console.error('Error:', error);
             alert('Error generating consolidated feedback');
@@ -411,13 +425,61 @@
         const showMarkdown = document.getElementById('showMarkdownToggle').checked;
         const renderedView = document.getElementById('consolidatedFeedback');
         const rawView = document.getElementById('consolidatedFeedbackRaw');
+        const saveButton = document.getElementById('saveConsolidatedFeedback');
         
         if (showMarkdown) {
             renderedView.style.display = 'none';
             rawView.style.display = 'block';
+            saveButton.style.display = 'inline-block';  // Show save button in edit mode
         } else {
+            // Update rendered view with current markdown content
+            renderedView.innerHTML = marked.parse(rawView.value);
             renderedView.style.display = 'block';
             rawView.style.display = 'none';
+            saveButton.style.display = 'none';  // Hide save button in preview mode
+        }
+    }
+
+    async function saveConsolidatedFeedback() {
+        const feedback = document.getElementById('consolidatedFeedbackRaw').value;
+        const button = document.getElementById('saveConsolidatedFeedback');
+        const originalText = button.textContent;
+        
+        button.textContent = 'Saving...';
+        button.disabled = true;
+        
+        try {
+            const response = await fetch('/save_consolidated_feedback/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    consolidated_feedback: feedback
+                })
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to save feedback');
+            }
+            
+            // Update the rendered view
+            document.getElementById('consolidatedFeedback').innerHTML = marked.parse(feedback);
+            
+            // Show success message
+            const saveStatus = document.createElement('div');
+            saveStatus.textContent = 'Changes saved successfully';
+            saveStatus.className = 'save-status show';
+            button.parentNode.appendChild(saveStatus);
+            setTimeout(() => saveStatus.remove(), 3000);
+            
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error saving feedback');
+        } finally {
+            button.textContent = originalText;
+            button.disabled = false;
         }
     }
 

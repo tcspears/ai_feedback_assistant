@@ -221,12 +221,24 @@ def paper(file_hash):
                     'evaluation_text': eval.evaluation_text
                 })
     
+    # Get related papers
+    related_papers = (Paper.query
+                     .join(Evaluation)
+                     .join(RubricCriteria)
+                     .filter(Paper.hash != file_hash)
+                     .distinct()
+                     .order_by(Paper.created_at.desc())
+                     .all())
+    
     # Get chat history
     chats = [(chat.user_message, chat.ai_response) for chat in 
              Chat.query.filter_by(paper_id=paper.id).order_by(Chat.created_at).all()]
     
     # Get saved feedback (don't convert to HTML)
     saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+    
+    # Format related papers for template
+    formatted_related = [(p.hash, p.filename) for p in related_papers]
     
     # Get the rubric name
     rubric_name = None
@@ -862,6 +874,32 @@ def save_feedback():
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)})
 
+@app.route('/save_consolidated_feedback/<file_hash>', methods=['POST'])
+@login_required
+def save_consolidated_feedback(file_hash):
+    try:
+        data = request.json
+        consolidated_feedback = data['consolidated_feedback']
+        
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+        
+        if saved_feedback:
+            saved_feedback.consolidated_feedback = consolidated_feedback
+            saved_feedback.updated_at = datetime.now()
+        else:
+            saved_feedback = SavedFeedback(
+                paper_id=paper.id,
+                consolidated_feedback=consolidated_feedback
+            )
+            db.session.add(saved_feedback)
+        
+        db.session.commit()
+        return jsonify({"success": True})
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")
