@@ -14,7 +14,8 @@
         <div class="related-papers">
             {% if related_papers %}
                 {% for paper in related_papers %}
-                    <a href="{{ url_for('paper', file_hash=paper[0]) }}" class="related-paper-link">
+                    <a href="{{ url_for('paper', file_hash=paper[0]) }}" 
+                       class="related-paper-link {% if paper[2] %}current-paper{% endif %}">
                         {{ paper[1] }}
                     </a>
                 {% endfor %}

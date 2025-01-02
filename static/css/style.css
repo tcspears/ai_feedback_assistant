@@ -953,3 +953,12 @@ input:checked + .slider:before {
 #saveMark:hover {
     background-color: var(--hover-color);
 }
+
+.related-paper-link.current-paper {
+    font-weight: bold;
+    color: var(--text-color);
+    background: var(--background-color);
+    cursor: default;
+    pointer-events: none;
+    transform: none;
+}

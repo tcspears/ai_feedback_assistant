@@ -170,6 +170,28 @@ def logout():
 def paper(file_hash):
     paper = Paper.query.filter_by(hash=file_hash).first_or_404()
     
+    # Get the rubric ID for the current paper through its evaluations
+    current_rubric_id = (db.session.query(RubricCriteria.rubric_id)
+                        .join(Evaluation, Evaluation.criteria_id == RubricCriteria.id)
+                        .filter(Evaluation.paper_id == paper.id)
+                        .first())
+    
+    # Get all papers that use the same rubric (including current)
+    if current_rubric_id:
+        related_papers = (Paper.query
+                         .join(Evaluation)
+                         .join(RubricCriteria)
+                         .filter(RubricCriteria.rubric_id == current_rubric_id[0])
+                         .distinct()
+                         .order_by(Paper.created_at.desc())
+                         .all())
+    else:
+        related_papers = [paper]  # Just show current paper if no rubric found
+
+    # Format papers for template, marking current paper
+    formatted_related = [(p.hash, p.filename, p.hash == file_hash) 
+                        for p in related_papers]
+    
     # Simplified query to get evaluations
     evaluations = (Evaluation.query
                   .filter_by(paper_id=paper.id)
@@ -199,24 +221,12 @@ def paper(file_hash):
                     'evaluation_text': eval.evaluation_text
                 })
     
-    # Get related papers
-    related_papers = (Paper.query
-                     .join(Evaluation)
-                     .join(RubricCriteria)
-                     .filter(Paper.hash != file_hash)
-                     .distinct()
-                     .order_by(Paper.created_at.desc())
-                     .all())
-    
     # Get chat history
     chats = [(chat.user_message, chat.ai_response) for chat in 
              Chat.query.filter_by(paper_id=paper.id).order_by(Chat.created_at).all()]
     
     # Get saved feedback (don't convert to HTML)
     saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
-    
-    # Format related papers for template
-    formatted_related = [(p.hash, p.filename) for p in related_papers]
     
     # Get the rubric name
     rubric_name = None
