@@ -525,26 +525,32 @@ def generate_consolidated_feedback():
         "**Preserve Original Language**: Retain the unique wording, tone, and phrasing wherever possible"
     )
 
-    prompt = f"""Your task is to combine multiple pieces of written feedback into a single, cohesive statement to the student. Follow these guidelines:
+    # Updated prompt with modified instructions
+    prompt = f"""Your task is to create a comprehensive feedback statement that begins with the provided additional feedback and selectively incorporates the criteria-specific evaluations. Follow these guidelines:
 
-    1. {preserve_language_instruction}
-    2. **Eliminate Redundancy**: If multiple pieces of feedback repeat the same point, mention it only once.
-    3. **Combine and Organize**: Merge related ideas logically, ensuring the statement flows smoothly.
-    4. **Maintain Clarity**: The final statement should be easily understood and well-structured.
-    5. **Avoid Omitting Relevant Information**: While you *should* remove repeated or redundant information, do not omit critical information or detail. This is especially important for the feedback listed in the 'Additional Feedback' section. This text should be incorporated as closely as possible to the original text.
+1. {preserve_language_instruction}
+2. **Preserve Additional Feedback**: The text included in the Additional Feedback section below MUST be included word-for-word, organized into their appropriate sections. You will need to make a judgment about the sections each piece of additional feedback belongs.
 
-    Your output should be one comprehensive piece of feedback that accurately reflects all key points of the original sources. Format your response in Markdown, using:
-        - Headers (##) for main sections
-        - Lists (- or *) for key points
-        - Bold (**) for emphasis on important elements
-        - Line breaks between paragraphs
+{additional_feedback}
 
-    Your feedback MUST be organized using these exact section headings in this order:
-    {', '.join(criteria_names)}
+3. **Enhance with Criteria-Specific Feedback**: After incorporating the additional feedback, selectively add relevant points from the criteria-specific feedback to provide more detail and context. Do not repeat points already covered in the additional feedback. Align the criteria-specific feedback to the tone and style of the additional feedback. For example, if the additional feedback is written in complete sentences, use complete sentences for the criteria-specific feedback.
+4. **Maintain Structure**: Organize all feedback using these exact section headings in this order:
+{', '.join(criteria_names)}
+5. **Format Feedback using Markdown**: Format your response in Markdown, using:
+- Headers (##) for main sections
+- Lists (- or *) for key points
+- Bold (**) for emphasis on important elements
+- Line breaks between paragraphs
 
-    Here are the feedback sections to incorporate:
+Here is the additional feedback:
 
-    {feedback_text}"""
+{additional_feedback}
+
+Here are the criteria-specific evaluations to selectively incorporate:
+
+{feedback_text}
+
+Remember: Your primary task is to take the additional feedback text and organize it into the required sections, then enhance it with relevant points from the criteria-specific evaluations. The additional feedback must remain unchanged - only organize it and supplement it."""
 
     # Generate consolidated feedback using the selected model
     if model.startswith('claude'):
