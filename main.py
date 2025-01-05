@@ -183,7 +183,7 @@ def paper(file_hash):
                          .join(RubricCriteria)
                          .filter(RubricCriteria.rubric_id == current_rubric_id[0])
                          .distinct()
-                         .order_by(Paper.created_at.desc())
+                         .order_by(Paper.filename.collate('NOCASE'))
                          .all())
     else:
         related_papers = [paper]  # Just show current paper if no rubric found
@@ -221,24 +221,12 @@ def paper(file_hash):
                     'evaluation_text': eval.evaluation_text
                 })
     
-    # Get related papers
-    related_papers = (Paper.query
-                     .join(Evaluation)
-                     .join(RubricCriteria)
-                     .filter(Paper.hash != file_hash)
-                     .distinct()
-                     .order_by(Paper.created_at.desc())
-                     .all())
-    
     # Get chat history
     chats = [(chat.user_message, chat.ai_response) for chat in 
              Chat.query.filter_by(paper_id=paper.id).order_by(Chat.created_at).all()]
     
     # Get saved feedback (don't convert to HTML)
     saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
-    
-    # Format related papers for template
-    formatted_related = [(p.hash, p.filename) for p in related_papers]
     
     # Get the rubric name
     rubric_name = None
@@ -393,7 +381,7 @@ Criteria: {criteria_text}
 Essay text:
 {text}
 
-Please provide a detailed evaluation focusing specifically on the {section_name} criterion described above. Format your response in Markdown, using:
+Please provide an evaluation focusing specifically on the {section_name} criterion described above. Format your response in Markdown, using:
 - Headers (##) for main sections
 - Lists (- or *) for key points
 - Bold (**) for emphasis on important elements
@@ -403,7 +391,7 @@ Please provide a detailed evaluation focusing specifically on the {section_name}
         if model.startswith('claude'):
             response = client_anthropic.messages.create(
                 model=model,
-                system="You are an experienced essay evaluator providing detailed feedback. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate.",
+                system="You are an experienced essay evaluator who provides constructive feedback to postgraduate students. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate.",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1000
             )
@@ -413,7 +401,7 @@ Please provide a detailed evaluation focusing specifically on the {section_name}
             response = client_openai.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "You are an experienced essay evaluator providing detailed feedback. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."},
+                    {"role": "system", "content": "You are an experienced essay evaluator who provides constructive feedback to postgraduate students. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."},
                     {"role": "user", "content": prompt}
                 ]
             )
