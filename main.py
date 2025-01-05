@@ -21,6 +21,11 @@ import anthropic
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import func
 import re
+import cProfile
+import pstats
+import io
+from functools import wraps
+import logging
 
 
 
@@ -133,6 +138,55 @@ def create_admin_user(username="admin", password="admin"):
             print(f"Admin user '{username}' created successfully")
         else:
             print(f"Admin user '{username}' already exists")
+
+
+def profile(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        pr = cProfile.Profile()
+        pr.enable()
+        result = func(*args, **kwargs)
+        pr.disable()
+        s = io.StringIO()
+        ps = pstats.Stats(pr, stream=s).sort_stats('cumulative')
+        ps.print_stats(20)  # Print top 20 time-consuming calls
+        print('Profile data:')
+        print(s.getvalue())
+        return result
+    return wrapper
+
+def setup_logging():
+    # Create logs directory if it doesn't exist
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+    
+    # Create a logger
+    logger = logging.getLogger('api_logger')
+    logger.setLevel(logging.DEBUG)
+    
+    # Remove any existing handlers
+    logger.handlers = []
+    
+    # Create a file handler
+    log_filename = f'logs/api_calls_{datetime.now().strftime("%Y%m%d")}.log'
+    file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Create a formatter
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    
+    # Add the handler to the logger
+    logger.addHandler(file_handler)
+    
+    return logger
+
+# Initialize logger
+api_logger = setup_logging()
+
+# Add a test log message at app startup
+api_logger.info("Logging system initialized")
+
 
 @app.template_filter('markdown')
 def markdown_filter(text):
@@ -387,26 +441,30 @@ Please provide an evaluation focusing specifically on the {section_name} criteri
 - Bold (**) for emphasis on important elements
 - Line breaks between paragraphs"""
 
+    system_msg = "You are an experienced essay evaluator who provides constructive feedback to postgraduate students. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."
+    api_logger.info(f"Sending prompt for {section_name} to API:")
+    api_logger.info(f"System Message: {system_msg}")
+    api_logger.info(f"Prompt:\n{prompt}\n{'='*50}")
     try:
         if model.startswith('claude'):
             response = client_anthropic.messages.create(
                 model=model,
-                system="You are an experienced essay evaluator who provides constructive feedback to postgraduate students. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate.",
+                system=system_msg,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1000
             )
             evaluation = response.content[0].text.strip()
-            print(f"Claude API Response for {section_name}:\n{evaluation}\n{'='*50}")
+            api_logger.info(f"Claude API Response for {section_name}:\n{evaluation}\n{'='*50}")
         else:
             response = client_openai.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "You are an experienced essay evaluator who provides constructive feedback to postgraduate students. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."},
+                    {"role": "system", "content": system_msg},
                     {"role": "user", "content": prompt}
                 ]
             )
             evaluation = response.choices[0].message.content.strip()
-            print(f"OpenAI API Response for {section_name}:\n{evaluation}\n{'='*50}")
+            api_logger.info(f"OpenAI API Response for {section_name}:\n{evaluation}\n{'='*50}")
         
         # Strip any HTML tags that might still be present
         evaluation = re.sub(r'<[^>]+>', '', evaluation)
@@ -472,71 +530,82 @@ def save_mark(file_hash):
 
 @app.route('/generate_consolidated_feedback', methods=['POST'])
 @login_required
+@profile
 def generate_consolidated_feedback():
-    data = request.json
-    additional_feedback = data['additional_feedback']
-    model = data['model']
-    file_hash = data['file_hash']
-    align_to_mark = data.get('align_to_mark', False)
-    mark = data.get('mark')
-    
-    paper = Paper.query.filter_by(hash=file_hash).first_or_404()
-    
-    # Get all evaluations for this paper (excluding summary)
-    evaluations = (Evaluation.query
-                  .join(RubricCriteria)
-                  .filter(
-                      Evaluation.paper_id == paper.id,
-                      Evaluation.criteria_id.isnot(None)
-                  )
-                  .order_by(RubricCriteria.id)
-                  .all())
-    
-    # Format feedback text
-    feedback_text = "Criteria-Specific Feedback:\n\n"
-    for eval in evaluations:
-        criteria = RubricCriteria.query.get(eval.criteria_id)
-        feedback_text += f"=== {criteria.section_name} ===\n"
-        feedback_text += f"{eval.evaluation_text}\n\n"
-    
-    if additional_feedback:
-        feedback_text += "=== Additional Feedback ===\n"
-        feedback_text += additional_feedback + "\n"
+    api_logger.info("=== ENTERING generate_consolidated_feedback ROUTE ===")
+    try:
+        data = request.json
+        api_logger.info("Request data received")
+        additional_feedback = data['additional_feedback']
+        model = data['model']
+        file_hash = data['file_hash']
+        align_to_mark = data.get('align_to_mark', False)
+        mark = data.get('mark')
 
-    # Get the criteria names for structuring the response
-    criteria_names = [RubricCriteria.query.get(eval.criteria_id).section_name 
-                     for eval in evaluations]
+        api_logger.info(f"\n\n=== GENERATING CONSOLIDATED FEEDBACK ===")
+        api_logger.info(f"Timestamp: {datetime.now().isoformat()}")
+        api_logger.info(f"Model: {model}")
+        api_logger.info(f"File Hash: {file_hash}")
+        api_logger.info(f"Align to Mark: {align_to_mark}")
+        api_logger.info(f"Mark: {mark}")
+        
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get all evaluations for this paper (excluding summary)
+        evaluations = (Evaluation.query
+                      .join(RubricCriteria)
+                      .filter(
+                          Evaluation.paper_id == paper.id,
+                          Evaluation.criteria_id.isnot(None)
+                      )
+                      .order_by(RubricCriteria.id)
+                      .all())
+        
+        # Format feedback text
+        feedback_text = "Criteria-Specific Feedback:\n\n"
+        for eval in evaluations:
+            criteria = RubricCriteria.query.get(eval.criteria_id)
+            feedback_text += f"=== {criteria.section_name} ===\n"
+            feedback_text += f"{eval.evaluation_text}\n\n"
+        
+        if additional_feedback:
+            feedback_text += "=== Additional Feedback ===\n"
+            feedback_text += additional_feedback + "\n"
 
-    # Get grade descriptors if alignment is requested
-    descriptors_text = ""
-    if align_to_mark and mark is not None:
-        try:
-            mark_float = float(mark)
-            descriptor = (GradeDescriptors.query
-                        .filter(GradeDescriptors.range_start <= mark_float,
-                               GradeDescriptors.range_end >= mark_float)
-                        .first())
-            if descriptor:
-                descriptors_text = descriptor.descriptor_text
-            else:
-                print(f"No descriptor found for mark {mark_float}")
-        except Exception as e:
-            print(f"Error processing mark {mark}: {str(e)}")
-            # Default to preserve original language if there's an error
-            align_to_mark = False
+        # Get the criteria names for structuring the response
+        criteria_names = [RubricCriteria.query.get(eval.criteria_id).section_name 
+                         for eval in evaluations]
 
-    # Updated prompt with conditional language alignment
-    preserve_language_instruction = (
-        "**Align to Grade Descriptors**: You should strive to balance retaining the unique wording, "
-        f"tone, and phrasing wherever possible while also ensuring alignment to the specific language "
-        f"used in the marking descriptors for this essay's mark. For this essay, those descriptors "
-        f"are: {descriptors_text}"
-    ) if align_to_mark and descriptors_text else (
-        "**Preserve Original Language**: Retain the unique wording, tone, and phrasing wherever possible"
-    )
+        # Get grade descriptors if alignment is requested
+        descriptors_text = ""
+        if align_to_mark and mark is not None:
+            try:
+                mark_float = float(mark)
+                descriptor = (GradeDescriptors.query
+                            .filter(GradeDescriptors.range_start <= mark_float,
+                                   GradeDescriptors.range_end >= mark_float)
+                            .first())
+                if descriptor:
+                    descriptors_text = descriptor.descriptor_text
+                else:
+                    print(f"No descriptor found for mark {mark_float}")
+            except Exception as e:
+                print(f"Error processing mark {mark}: {str(e)}")
+                # Default to preserve original language if there's an error
+                align_to_mark = False
 
-    # Updated prompt with modified instructions
-    prompt = f"""Your task is to create a comprehensive feedback statement that begins with the provided additional feedback and selectively incorporates the criteria-specific evaluations. Follow these guidelines:
+        # Updated prompt with conditional language alignment
+        preserve_language_instruction = (
+            "**Align to Grade Descriptors**: You should strive to balance retaining the unique wording, "
+            f"tone, and phrasing wherever possible while also ensuring alignment to the specific language "
+            f"used in the marking descriptors for this essay's mark. For this essay, those descriptors "
+            f"are: {descriptors_text}"
+        ) if align_to_mark and descriptors_text else (
+            "**Preserve Original Language**: Retain the unique wording, tone, and phrasing wherever possible"
+        )
+
+        # Updated prompt with modified instructions
+        prompt = f"""Your task is to create a comprehensive feedback statement that begins with the provided additional feedback and selectively incorporates the criteria-specific evaluations. Follow these guidelines:
 
 1. {preserve_language_instruction}
 2. **Preserve Additional Feedback**: The text included in the Additional Feedback section below MUST be included word-for-word, organized into their appropriate sections. You will need to make a judgment about the sections each piece of additional feedback belongs.
@@ -562,43 +631,65 @@ Here are the criteria-specific evaluations to selectively incorporate:
 
 Remember: Your primary task is to take the additional feedback text and organize it into the required sections, then enhance it with relevant points from the criteria-specific evaluations. The additional feedback must remain unchanged - only organize it and supplement it."""
 
-    # Generate consolidated feedback using the selected model
-    if model.startswith('claude'):
-        response = client_anthropic.messages.create(
-            model=model,
-            system="You are a helpful writing assistant. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate.",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000
-        )
-        consolidated_feedback = response.content[0].text.strip()
-    else:
-        response = client_openai.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are a helpful writing assistant. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        consolidated_feedback = response.choices[0].message.content.strip()
+        api_logger.info("Sending prompt to API:")
+        api_logger.info(f"System Message: {system_msg}")
+        api_logger.info("Prompt:")
+        api_logger.info(prompt)
 
-    # Save or update feedback
-    saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
-    if saved_feedback:
-        saved_feedback.additional_feedback = additional_feedback
-        saved_feedback.consolidated_feedback = consolidated_feedback
-        saved_feedback.updated_at = datetime.now()
-        # Preserve the existing mark if there is one
-    else:
-        saved_feedback = SavedFeedback(
-            paper_id=paper.id,
-            additional_feedback=additional_feedback,
-            consolidated_feedback=consolidated_feedback,
-            mark=mark if mark is not None else None  # Include mark if provided
-        )
-        db.session.add(saved_feedback)
-    
-    db.session.commit()
-    return jsonify({"consolidated_feedback": consolidated_feedback})
+        # Make the API call
+        if model.startswith('claude'):
+            system_msg = "You are a helpful writing assistant. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."
+            api_logger.info(f"System message: {system_msg}")
+            response = client_anthropic.messages.create(
+                model=model,
+                system=system_msg,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1000
+            )
+            consolidated_feedback = response.content[0].text.strip()
+            api_logger.info("Claude API Response received:")
+            api_logger.info(consolidated_feedback)
+        else:
+            system_msg = "You are a helpful writing assistant. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."
+            api_logger.info(f"System message: {system_msg}")
+            response = client_openai.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            consolidated_feedback = response.choices[0].message.content.strip()
+            api_logger.info("OpenAI API Response received:")
+            api_logger.info(consolidated_feedback)
+
+        api_logger.info("=== END OF CONSOLIDATED FEEDBACK GENERATION ===\n")
+
+        # Save or update feedback
+        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+        if saved_feedback:
+            saved_feedback.additional_feedback = additional_feedback
+            saved_feedback.consolidated_feedback = consolidated_feedback
+            saved_feedback.updated_at = datetime.now()
+            # Preserve the existing mark if there is one
+        else:
+            saved_feedback = SavedFeedback(
+                paper_id=paper.id,
+                additional_feedback=additional_feedback,
+                consolidated_feedback=consolidated_feedback,
+                mark=mark if mark is not None else None  # Include mark if provided
+            )
+            db.session.add(saved_feedback)
+        
+        db.session.commit()
+        return jsonify({"consolidated_feedback": consolidated_feedback})
+
+    except Exception as e:
+        api_logger.error(f"Error in generate_consolidated_feedback: {str(e)}")
+        api_logger.error("Full traceback:", exc_info=True)
+        raise
+    finally:
+        api_logger.info("=== EXITING generate_consolidated_feedback ROUTE ===")
 
 @app.route('/save_additional_feedback/<file_hash>', methods=['POST'])
 @login_required
@@ -888,6 +979,69 @@ def save_consolidated_feedback(file_hash):
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)})
+
+@app.route('/polish_feedback/<file_hash>', methods=['POST'])
+@login_required
+def polish_feedback(file_hash):
+    try:
+        data = request.json
+        model = data['model']
+        
+        # Get the saved feedback
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+        
+        if not saved_feedback or not saved_feedback.consolidated_feedback:
+            return jsonify({"error": "No feedback found to polish"}), 400
+
+        polish_prompt = f"""Please polish and enhance the following feedback statement by converting it from bullet points into prose. 
+        The goal is to make it more cohesive, professional, and well-structured while preserving 
+        all the key points and maintaining the academic tone. Ensure the feedback remains 
+        constructive and specific.
+
+        Original feedback:
+        {saved_feedback.consolidated_feedback}
+
+        Please provide a polished version that:
+        1. Improves flow and transitions between sections
+        2. Enhances clarity and precision of language
+        3. Maintains consistent tone throughout
+        4. Preserves all specific feedback points
+        """
+
+        api_logger.info("\n=== POLISHING FEEDBACK ===")
+        api_logger.info(f"Model: {model}")
+        api_logger.debug(f"Prompt:\n{polish_prompt}")
+
+        if model.startswith('claude'):
+            system_msg = "You are an experienced academic writing specialist who excels at polishing feedback while maintaining its substance. Format all responses in Markdown."
+            api_logger.debug(f"System message: {system_msg}")
+            response = client_anthropic.messages.create(
+                model=model,
+                system=system_msg,
+                messages=[{"role": "user", "content": polish_prompt}],
+                max_tokens=1000
+            )
+            polished_feedback = response.content[0].text.strip()
+            api_logger.debug(f"Response: {polished_feedback}")
+        else:
+            system_msg = "You are an experienced academic writing specialist who excels at polishing feedback while maintaining its substance. Format all responses in Markdown."
+            api_logger.debug(f"System message: {system_msg}")
+            response = client_openai.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": polish_prompt}
+                ]
+            )
+            polished_feedback = response.choices[0].message.content.strip()
+            api_logger.debug(f"Response: {polished_feedback}")
+
+        return jsonify({"polished_feedback": polished_feedback})
+    
+    except Exception as e:
+        print(f"Error polishing feedback: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")
