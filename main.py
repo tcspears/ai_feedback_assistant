@@ -26,7 +26,36 @@ import pstats
 import io
 from functools import wraps
 import logging
+from typing import Dict, Optional
+from dataclasses import dataclass, field
 
+@dataclass
+class StructuredPrompt:
+    sections: Dict[str, str] = field(default_factory=dict)
+    section_order: list[str] = field(default_factory=list)  # Empty by default
+
+    def add_section(self, name: str, content: str, 
+                   subsections: Optional[Dict[str, str]] = None) -> None:
+        if subsections:
+            # Handle nested sections
+            content = "\n".join([
+                f"<{sub_name}>{sub_content}</{sub_name}>"
+                for sub_name, sub_content in subsections.items()
+            ])
+        self.sections[name] = content
+        # Add to section_order if not already present
+        if name not in self.section_order:
+            self.section_order.append(name)
+
+    def build(self) -> str:
+        # Build prompt maintaining specified order
+        ordered_sections = []
+        for section in self.section_order:
+            if section in self.sections:
+                ordered_sections.append(
+                    f"<{section}>{self.sections[section]}</{section}>"
+                )
+        return "\n\n".join(ordered_sections)
 
 
 def adapt_datetime(ts):
@@ -427,30 +456,46 @@ def save_rubric():
 def generate_evaluation(text, section_name, criteria_text, model):
     """Generate an evaluation for a section of text using the specified AI model."""
     
-    prompt = f"""Below is a section of the marking rubric for this assignment. Please evaluate the following essay according to the criteria described. Your evaluation should begin with your categorization of the essay (e.g. Fail, Satisfactory, Good, Very Good, Excellent), followed by your justification for that categorization, and then relevant feedback for the student:
-
-Section Name: {section_name}
-Criteria: {criteria_text}
-
-Essay text:
-{text}
-
-Please provide an evaluation focusing specifically on the {section_name} criterion described above. Format your response in Markdown, using:
+    # Create prompt using StructuredPrompt class
+    prompt = StructuredPrompt()
+    
+    # Add initial task summary
+    prompt.add_section("initial_task_summary", 
+        "You are evaluating a section of an academic essay according to specific criteria.")
+    
+    # Add essay text
+    prompt.add_section("essay_to_evaluate", text)
+    
+    # Add detailed instructions with subsections
+    prompt.add_section("detailed_instructions", "", subsections={
+        "section_focus": section_name,
+        "evaluation_criteria": criteria_text,
+        "formatting_requirements": """Format your response in Markdown, using:
 - Headers (##) for main sections
 - Lists (- or *) for key points
 - Bold (**) for emphasis on important elements
 - Line breaks between paragraphs"""
+    })
+    
+    # Add specific analysis request
+    prompt.add_section("analysis_request", 
+        "Please provide an evaluation that begins with your categorization of the essay "
+        "(e.g. Fail, Satisfactory, Good, Very Good, Excellent), followed by your "
+        "justification for that categorization, and then relevant feedback for the student.")
 
-    system_msg = "You are an experienced essay evaluator who provides constructive feedback to postgraduate students. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."
+    final_prompt = prompt.build()
+    system_msg = "You are an experienced essay evaluator who provides constructive feedback to postgraduate students. Please format all of your responses as valid Markdown."
+
     api_logger.info(f"Sending prompt for {section_name} to API:")
     api_logger.info(f"System Message: {system_msg}")
-    api_logger.info(f"Prompt:\n{prompt}\n{'='*50}")
+    api_logger.info(f"Prompt:\n{final_prompt}\n{'='*50}")
+    
     try:
         if model.startswith('claude'):
             response = client_anthropic.messages.create(
                 model=model,
                 system=system_msg,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": final_prompt}],
                 max_tokens=1000
             )
             evaluation = response.content[0].text.strip()
@@ -460,20 +505,18 @@ Please provide an evaluation focusing specifically on the {section_name} criteri
                 model=model,
                 messages=[
                     {"role": "system", "content": system_msg},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": final_prompt}
                 ]
             )
             evaluation = response.choices[0].message.content.strip()
             api_logger.info(f"OpenAI API Response for {section_name}:\n{evaluation}\n{'='*50}")
         
-        # Strip any HTML tags that might still be present
         evaluation = re.sub(r'<[^>]+>', '', evaluation)
         return evaluation
     
     except Exception as e:
         print(f"Error generating evaluation: {str(e)}")
         return f"Error generating evaluation for {section_name}: {str(e)}"
-    
 
 @app.route('/get_rubric/<int:rubric_id>')
 @login_required
@@ -562,16 +605,14 @@ def generate_consolidated_feedback():
                       .all())
         
         # Format feedback text
-        feedback_text = "Criteria-Specific Feedback:\n\n"
+        feedback_text = "<criteria-specific-feedback>\n"
         for eval in evaluations:
             criteria = RubricCriteria.query.get(eval.criteria_id)
-            feedback_text += f"=== {criteria.section_name} ===\n"
-            feedback_text += f"{eval.evaluation_text}\n\n"
+            feedback_text += f"<{criteria.section_name}>\n"
+            feedback_text += f"{eval.evaluation_text}\n"
+            feedback_text += f"</{criteria.section_name}>\n"
+        feedback_text += "</criteria-specific-feedback>\n"
         
-        if additional_feedback:
-            feedback_text += "=== Additional Feedback ===\n"
-            feedback_text += additional_feedback + "\n"
-
         # Get the criteria names for structuring the response
         criteria_names = [RubricCriteria.query.get(eval.criteria_id).section_name 
                          for eval in evaluations]
@@ -604,37 +645,59 @@ def generate_consolidated_feedback():
             "**Preserve Original Language**: Retain the unique wording, tone, and phrasing wherever possible"
         )
 
-        # Updated prompt with modified instructions
-        prompt = f"""Your task is to create a comprehensive feedback statement that begins with the provided additional feedback and selectively incorporates the criteria-specific evaluations. Follow these guidelines:
+        # Create prompt using StructuredPrompt class
+        prompt = StructuredPrompt()
+        
+        # Add initial task summary
+        prompt.add_section("initial_task_summary", 
+            "Create a comprehensive feedback statement that incorporates additional feedback "
+            "and criteria-specific evaluations.")
+        
+        # Add feedback content
+        prompt.add_section("feedback_content", "Below is the additional feedback and the criteria-specific evaluations:", subsections={
+            "additional_feedback": additional_feedback,
+            "criteria_feedback": feedback_text
+        })
+        
+        # Add detailed instructions with subsections
+        instructions_subsections = {
+            "language_preservation": (
+                "**Preserve Original Language**: Retain the unique wording, tone, and phrasing wherever possible"
+            ),
+            "feedback_handling": """
+                1. The Additional Feedback section MUST be included word-for-word, organized into appropriate sections
+                2. Selectively add relevant points from criteria-specific feedback
+                3. Do not repeat points already covered in additional feedback
+                4. Align criteria-specific feedback to the tone and style of additional feedback""",
+            "section_structure": f"Organize feedback using these exact section headings: {', '.join(criteria_names)}",
+            "formatting": """Format using Markdown:
+                - Headers (##) for main sections
+                - Lists (- or *) for key points
+                - Bold (**) for emphasis
+                - Line breaks between paragraphs"""
+        }
+        
+        # Add grade descriptor alignment if needed
+        if align_to_mark and descriptors_text:
+            instructions_subsections["grade_alignment"] = (
+                f"Align feedback language with these grade descriptors: {descriptors_text}"
+            )
+            
+        prompt.add_section("detailed_instructions", "", subsections=instructions_subsections)
+        
+        # Add analysis request
+        prompt.add_section("analysis_request", 
+            "Organize the additional feedback into the required sections and enhance it with "
+            "relevant points from the criteria-specific evaluations while preserving the "
+            "original additional feedback text.")
 
-1. {preserve_language_instruction}
-2. **Preserve Additional Feedback**: The text included in the Additional Feedback section below MUST be included word-for-word, organized into their appropriate sections. You will need to make a judgment about the sections each piece of additional feedback belongs.
-
-{additional_feedback}
-
-3. **Enhance with Criteria-Specific Feedback**: After incorporating the additional feedback, selectively add relevant points from the criteria-specific feedback to provide more detail and context. Do not repeat points already covered in the additional feedback. Align the criteria-specific feedback to the tone and style of the additional feedback. For example, if the additional feedback is written in complete sentences, use complete sentences for the criteria-specific feedback.
-4. **Maintain Structure**: Organize all feedback using these exact section headings in this order:
-{', '.join(criteria_names)}
-5. **Format Feedback using Markdown**: Format your response in Markdown, using:
-- Headers (##) for main sections
-- Lists (- or *) for key points
-- Bold (**) for emphasis on important elements
-- Line breaks between paragraphs
-
-Here is the additional feedback:
-
-{additional_feedback}
-
-Here are the criteria-specific evaluations to selectively incorporate:
-
-{feedback_text}
-
-Remember: Your primary task is to take the additional feedback text and organize it into the required sections, then enhance it with relevant points from the criteria-specific evaluations. The additional feedback must remain unchanged - only organize it and supplement it."""
+        final_prompt = prompt.build()
+        system_msg = "You are a helpful writing assistant. Please format all responses as valid Markdown."
 
         api_logger.info("Sending prompt to API:")
         api_logger.info(f"System Message: {system_msg}")
         api_logger.info("Prompt:")
-        api_logger.info(prompt)
+        api_logger.info(final_prompt)
 
         # Make the API call
         if model.startswith('claude'):
@@ -643,7 +706,7 @@ Remember: Your primary task is to take the additional feedback text and organize
             response = client_anthropic.messages.create(
                 model=model,
                 system=system_msg,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": final_prompt}],
                 max_tokens=1000
             )
             consolidated_feedback = response.content[0].text.strip()
@@ -656,7 +719,7 @@ Remember: Your primary task is to take the additional feedback text and organize
                 model=model,
                 messages=[
                     {"role": "system", "content": system_msg},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": final_prompt}
                 ]
             )
             consolidated_feedback = response.choices[0].message.content.strip()
@@ -994,44 +1057,54 @@ def polish_feedback(file_hash):
         if not saved_feedback or not saved_feedback.consolidated_feedback:
             return jsonify({"error": "No feedback found to polish"}), 400
 
-        polish_prompt = f"""Please polish and enhance the following feedback statement by converting it from bullet points into prose. 
-        The goal is to make it more cohesive, professional, and well-structured while preserving 
-        all the key points and maintaining the academic tone. Ensure the feedback remains 
-        constructive and specific.
+        # Create prompt using StructuredPrompt class
+        prompt = StructuredPrompt()
+        
+        # Add task description
+        prompt.add_section("task_description", 
+            "Polish and enhance the following feedback statement by converting it from "
+            "bullet points into prose.")
+        
+        # Add the feedback content
+        prompt.add_section("feedback_to_polish", saved_feedback.consolidated_feedback)
+        
+        # Add detailed instructions with subsections
+        prompt.add_section("detailed_instructions", "", subsections={
+            "goal": ("Make the feedback more cohesive, professional, and well-structured while "
+                    "preserving all the key points and maintaining the academic tone."),
+            "requirements": """
+                1. Improves flow and transitions between sections
+                2. Enhances clarity and precision of language
+                3. Maintains consistent tone throughout
+                4. Preserves all specific feedback points""",
+            "formatting": "Format the response in Markdown with appropriate headers and styling."
+        })
 
-        Original feedback:
-        {saved_feedback.consolidated_feedback}
-
-        Please provide a polished version that:
-        1. Improves flow and transitions between sections
-        2. Enhances clarity and precision of language
-        3. Maintains consistent tone throughout
-        4. Preserves all specific feedback points
-        """
+        final_prompt = prompt.build()
+        system_msg = ("You are an experienced academic writing specialist who excels at "
+                     "polishing feedback while maintaining its substance. Format all "
+                     "responses in Markdown.")
 
         api_logger.info("\n=== POLISHING FEEDBACK ===")
         api_logger.info(f"Model: {model}")
-        api_logger.debug(f"Prompt:\n{polish_prompt}")
+        api_logger.debug(f"Prompt:\n{final_prompt}")
+        api_logger.debug(f"System message: {system_msg}")
 
         if model.startswith('claude'):
-            system_msg = "You are an experienced academic writing specialist who excels at polishing feedback while maintaining its substance. Format all responses in Markdown."
-            api_logger.debug(f"System message: {system_msg}")
             response = client_anthropic.messages.create(
                 model=model,
                 system=system_msg,
-                messages=[{"role": "user", "content": polish_prompt}],
+                messages=[{"role": "user", "content": final_prompt}],
                 max_tokens=1000
             )
             polished_feedback = response.content[0].text.strip()
             api_logger.debug(f"Response: {polished_feedback}")
         else:
-            system_msg = "You are an experienced academic writing specialist who excels at polishing feedback while maintaining its substance. Format all responses in Markdown."
-            api_logger.debug(f"System message: {system_msg}")
             response = client_openai.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": system_msg},
-                    {"role": "user", "content": polish_prompt}
+                    {"role": "user", "content": final_prompt}
                 ]
             )
             polished_feedback = response.choices[0].message.content.strip()

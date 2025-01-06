@@ -60,6 +60,13 @@
             </div>
             {% endfor %}
 
+            <!-- Core Feedback (previously Additional Feedback) -->
+            <div class="evaluation-section">
+                <h3>Core Feedback</h3>
+                <textarea id="additionalFeedback" placeholder="Enter any core feedback here...">{{ saved_additional_feedback or '' }}</textarea>
+                <button id="saveAdditionalFeedback" onclick="saveAdditionalFeedback()">Save Core Feedback</button>
+            </div>
+
             <!-- Criteria Evaluations -->
             {% for evaluation in evaluations if evaluation.section_name not in ['_summary', '_overall'] %}
             <div class="evaluation-section">
@@ -75,13 +82,6 @@
                 </div>
             </div>
             {% endfor %}
-
-            <!-- Additional Feedback -->
-            <div class="evaluation-section">
-                <h3>Additional Feedback</h3>
-                <textarea id="additionalFeedback" placeholder="Enter any additional feedback here...">{{ saved_additional_feedback or '' }}</textarea>
-                <button id="saveAdditionalFeedback" onclick="saveAdditionalFeedback()">Save Additional Feedback</button>
-            </div>
 
             <!-- Numerical Mark -->
             <div class="evaluation-section">
@@ -317,7 +317,6 @@
 
         const additionalFeedback = document.getElementById('additionalFeedback').value;
         const alignToMark = document.getElementById('alignToMarkToggle').checked;
-        const polish = document.getElementById('polishToggle').checked;
         const mark = document.getElementById('numericalMark').value;
         
         try {
@@ -331,12 +330,19 @@
                     model: '{{ model }}',
                     file_hash: '{{ file_hash }}',
                     align_to_mark: alignToMark,
-                    polish: polish,
                     mark: parseFloat(mark)
                 })
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
             document.getElementById('consolidatedFeedbackRaw').value = data.consolidated_feedback;
             document.getElementById('consolidatedFeedback').innerHTML = marked.parse(data.consolidated_feedback);
             
@@ -344,9 +350,13 @@
             if (document.getElementById('showMarkdownToggle').checked) {
                 document.getElementById('saveConsolidatedFeedback').style.display = 'inline-block';
             }
+
+            // Show the Polish button after successful generation
+            document.getElementById('polishFeedback').style.display = 'inline-block';
+
         } catch (error) {
             console.error('Error:', error);
-            alert('Error generating consolidated feedback');
+            alert(`Error generating consolidated feedback: ${error.message}`);
         } finally {
             button.textContent = originalText;
             button.disabled = false;
