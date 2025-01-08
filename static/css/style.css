@@ -728,6 +728,7 @@ select:disabled {
 
 /* Save button styles for both Core Feedback and criteria feedback */
 #saveAdditionalFeedback,
+#moderateFeedback,
 .save-feedback-btn {
     padding: 10px 20px;
     font-size: 1.1em;
@@ -741,6 +742,7 @@ select:disabled {
 }
 
 #saveAdditionalFeedback:hover,
+#moderateFeedback:hover,
 .save-feedback-btn:hover {
     background-color: var(--hover-color);
 }
@@ -1064,4 +1066,38 @@ input:checked + .slider:before {
         margin-left: auto;
         transform: none;
     }
+}
+
+/* Specific styles for the Core Feedback buttons to ensure exact matching */
+#saveAdditionalFeedback,
+#moderateFeedback {
+    padding: 10px 20px;
+    font-size: 1.1em;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    margin: 0;
+    line-height: 1.2;
+    font-family: inherit;
+    font-weight: normal;
+    height: auto;
+    display: inline-block;
+    vertical-align: middle;
+    text-align: center;
+    white-space: nowrap;
+    box-shadow: none;
+}
+
+#saveAdditionalFeedback:hover,
+#moderateFeedback:hover {
+    background-color: var(--hover-color);
+}
+
+#saveAdditionalFeedback:disabled,
+#moderateFeedback:disabled {
+    background-color: var(--border-color);
+    cursor: not-allowed;
 }

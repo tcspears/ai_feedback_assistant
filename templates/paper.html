@@ -44,7 +44,7 @@
             <iframe
                 src="{{ url_for('static', filename=pdf_path) }}"
                 width="100%"
-                height="600px"
+                height="720px"
                 style="border: 1px solid #333; border-radius: 4px;">
             </iframe>
         </div>
@@ -60,11 +60,18 @@
             </div>
             {% endfor %}
 
-            <!-- Core Feedback (previously Additional Feedback) -->
+            <!-- Core Feedback Section -->
             <div class="evaluation-section">
                 <h3>Core Feedback</h3>
-                <textarea id="additionalFeedback" placeholder="Enter any core feedback here...">{{ saved_additional_feedback or '' }}</textarea>
-                <button id="saveAdditionalFeedback" onclick="saveAdditionalFeedback()">Save Core Feedback</button>
+                <textarea id="additionalFeedback" placeholder="Enter your core feedback for this essay here...">{{ saved_additional_feedback or '' }}</textarea>
+                <div class="button-row">
+                    <button id="saveAdditionalFeedback" onclick="saveAdditionalFeedback()">Save Core Feedback</button>
+                    <button id="moderateFeedback" 
+                            onclick="moderateFeedback()" 
+                            {% if not saved_additional_feedback %}disabled{% endif %}>
+                        Evaluate Feedback
+                    </button>
+                </div>
             </div>
 
             <!-- Criteria Evaluations -->
@@ -76,8 +83,12 @@
                         class="feedback-textarea" 
                         id="evaluation-{{ evaluation.id }}"
                         data-evaluation-id="{{ evaluation.id }}"
-                        spellcheck="true">{{ evaluation.evaluation_text }}</textarea>
-                    <button class="save-feedback-btn" onclick="saveFeedback({{ evaluation.id }})">Save Changes</button>
+                        spellcheck="true"
+                        {% if not evaluation.evaluation_text %}disabled{% endif %}
+                        placeholder="Criteria-specific feedback will appear here after moderation...">{{ evaluation.evaluation_text }}</textarea>
+                    <button class="save-feedback-btn" onclick="saveFeedback({{ evaluation.id }})" {% if not evaluation.evaluation_text %}disabled{% endif %}>
+                        Save Changes
+                    </button>
                     <div class="save-status" id="save-status-{{ evaluation.id }}"></div>
                 </div>
             </div>
@@ -165,6 +176,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
     <!-- Include the existing JavaScript functions here -->
     <script>
     let lastChecked = null;
@@ -366,6 +378,7 @@
     async function saveAdditionalFeedback() {
         const additionalFeedback = document.getElementById('additionalFeedback').value;
         const button = document.getElementById('saveAdditionalFeedback');
+        const moderateButton = document.getElementById('moderateFeedback');
         const originalText = button.textContent;
         
         button.textContent = 'Saving...';
@@ -386,9 +399,13 @@
             if (!data.success) {
                 throw new Error(data.error || 'Failed to save');
             }
+            
+            // Enable the moderate button after successful save
+            moderateButton.disabled = false;
+            
         } catch (error) {
             console.error('Error:', error);
-            alert('Error saving additional feedback');
+            alert('Error saving core feedback');
         } finally {
             button.textContent = originalText;
             button.disabled = false;
@@ -569,6 +586,183 @@
             button.disabled = false;
         }
     }
+
+    async function moderateFeedback() {
+        const button = document.getElementById('moderateFeedback');
+        const originalText = button.textContent;
+        button.textContent = 'Moderating...';
+        button.disabled = true;
+
+        const coreFeedback = document.getElementById('additionalFeedback').value;
+        
+        try {
+            const response = await fetch('/moderate_feedback/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    core_feedback: coreFeedback,
+                    model: '{{ model }}'
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            // Update each criteria textarea with the moderated feedback
+            for (const [evaluationId, feedback] of Object.entries(data.moderated_feedback)) {
+                const textarea = document.getElementById(`evaluation-${evaluationId}`);
+                if (textarea) {
+                    textarea.value = feedback;
+                    textarea.disabled = false;
+                    // Enable the corresponding save button
+                    textarea.nextElementSibling.disabled = false;
+                }
+            }
+
+        } catch (error) {
+            console.error('Error:', error);
+            alert(`Error moderating feedback: ${error.message}`);
+        } finally {
+            button.textContent = originalText;
+            button.disabled = false;
+        }
+    }
+
+    // Create debounced save functions for each type of content
+    const debouncedSaveCoreFeedback = _.debounce(async (content) => {
+        try {
+            const response = await fetch('/save_additional_feedback/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    additional_feedback: content
+                })
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to save');
+            }
+            
+            // Enable the moderate button after successful save
+            document.getElementById('moderateFeedback').disabled = false;
+            
+            // Show a brief "Saved" message
+            const saveStatus = document.createElement('div');
+            saveStatus.textContent = 'Changes saved';
+            saveStatus.className = 'save-status show';
+            document.getElementById('additionalFeedback').parentNode.appendChild(saveStatus);
+            setTimeout(() => saveStatus.remove(), 2000);
+            
+        } catch (error) {
+            console.error('Error:', error);
+            // Optionally show an error message to the user
+        }
+    }, 1000);  // Wait 1 second after last keystroke before saving
+
+    const debouncedSaveCriteriaFeedback = _.debounce(async (evaluationId, content) => {
+        try {
+            const response = await fetch('/save_feedback', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    evaluation_id: evaluationId,
+                    feedback_text: content
+                })
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to save');
+            }
+            
+            // Show brief save status
+            const saveStatus = document.getElementById(`save-status-${evaluationId}`);
+            if (saveStatus) {
+                saveStatus.textContent = 'Changes saved';
+                saveStatus.classList.add('show');
+                setTimeout(() => saveStatus.classList.remove('show'), 2000);
+            }
+            
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    }, 1000);
+
+    // Add event listeners to textareas
+    document.addEventListener('DOMContentLoaded', function() {
+        // Core feedback autosave
+        const coreFeedbackTextarea = document.getElementById('additionalFeedback');
+        if (coreFeedbackTextarea) {
+            coreFeedbackTextarea.addEventListener('input', (e) => {
+                debouncedSaveCoreFeedback(e.target.value);
+            });
+        }
+        
+        // Criteria feedback autosave
+        const criteriaTextareas = document.querySelectorAll('.feedback-textarea[data-evaluation-id]');
+        criteriaTextareas.forEach(textarea => {
+            textarea.addEventListener('input', (e) => {
+                const evaluationId = e.target.dataset.evaluationId;
+                debouncedSaveCriteriaFeedback(evaluationId, e.target.value);
+            });
+        });
+        
+        // Consolidated feedback autosave
+        const consolidatedTextarea = document.getElementById('consolidatedFeedbackRaw');
+        if (consolidatedTextarea) {
+            consolidatedTextarea.addEventListener('input', (e) => {
+                debouncedSaveConsolidatedFeedback(e.target.value);
+            });
+        }
+    });
+
+    // Add debounced save for consolidated feedback
+    const debouncedSaveConsolidatedFeedback = _.debounce(async (content) => {
+        try {
+            const response = await fetch('/save_consolidated_feedback/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    consolidated_feedback: content
+                })
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to save');
+            }
+            
+            // Update the rendered view if in preview mode
+            if (!document.getElementById('showMarkdownToggle').checked) {
+                document.getElementById('consolidatedFeedback').innerHTML = marked.parse(content);
+            }
+            
+            // Show brief save status
+            const saveStatus = document.createElement('div');
+            saveStatus.textContent = 'Changes saved';
+            saveStatus.className = 'save-status show';
+            document.getElementById('consolidatedFeedbackRaw').parentNode.appendChild(saveStatus);
+            setTimeout(() => saveStatus.remove(), 2000);
+            
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    }, 1000);
     </script>
 </body>
 </html>

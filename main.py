@@ -816,13 +816,10 @@ def index():
         if f:
             try:
                 filename = secure_filename(f.filename)
-                # Change upload path to static/uploads
                 upload_dir = os.path.join('static', app.config['UPLOAD_FOLDER'])
                 file_path = os.path.join(upload_dir, filename)
                 
-                # Ensure upload directory exists
                 os.makedirs(upload_dir, exist_ok=True)
-                
                 f.save(file_path)
                 
                 with open(file_path, 'rb') as file:
@@ -833,7 +830,7 @@ def index():
                 if existing_paper:
                     return jsonify({'redirect': url_for('paper', file_hash=file_hash)})
                 
-                # Store PDF in a permanent location within static/uploads
+                # Store PDF in a permanent location
                 pdf_storage_path = os.path.join(upload_dir, f"{file_hash}.pdf")
                 os.rename(file_path, pdf_storage_path)
                 
@@ -844,7 +841,7 @@ def index():
                     for page in reader.pages:
                         full_text += page.extract_text()
                 
-                # Remove personal identifiers before storing
+                # Remove personal identifiers
                 full_text = remove_personal_identifiers(full_text)
                 
                 # Create new paper
@@ -856,18 +853,14 @@ def index():
                     pdf_path=pdf_storage_path
                 )
                 db.session.add(new_paper)
-                db.session.commit()
                 
-                # Generate evaluations for each criterion
+                # Create empty evaluations for each criterion
                 criteria = RubricCriteria.query.filter_by(rubric_id=rubric_id).all()
-                
                 for criterion in criteria:
-                    evaluation = generate_evaluation(full_text, criterion.section_name, 
-                                                  criterion.criteria_text, model)
                     new_evaluation = Evaluation(
                         paper_id=new_paper.id,
                         criteria_id=criterion.id,
-                        evaluation_text=evaluation
+                        evaluation_text=""  # Start with empty evaluation
                     )
                     db.session.add(new_evaluation)
                 
@@ -1114,6 +1107,105 @@ def polish_feedback(file_hash):
     
     except Exception as e:
         print(f"Error polishing feedback: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/moderate_feedback/<file_hash>', methods=['POST'])
+@login_required
+def moderate_feedback(file_hash):
+    try:
+        data = request.json
+        core_feedback = data['core_feedback']
+        model = data['model']
+        
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get all criteria evaluations for this paper
+        evaluations = (Evaluation.query
+                      .join(RubricCriteria)
+                      .filter(Evaluation.paper_id == paper.id)
+                      .filter(RubricCriteria.section_name != '_summary')
+                      .all())
+        
+        moderated_feedback = {}
+        
+        for evaluation in evaluations:
+            criteria = RubricCriteria.query.get(evaluation.criteria_id)
+            
+            # Create prompt using StructuredPrompt class
+            prompt = StructuredPrompt()
+            
+            # Add context sections
+            prompt.add_section("task_description", 
+                "Your task is to moderate the existing feedback of this essay, identifying gaps and potential issues "
+                "that weren't spotted by the original grader. Below you will find the essay text, the core feedback provided by the grader, and the evaluation criteria you should use to evaluate the essay."
+                "Along with identifying gaps, you should provide a brief overall evaluation of the essay, including a proposed mark according to the evaluation criteria supplied.")
+            
+            prompt.add_section("essay_text", paper.full_text)
+            
+            prompt.add_section("core_feedback", core_feedback)
+            
+            # Add criteria-specific instructions
+            prompt.add_section("criteria_focus", "", subsections={
+                "section": criteria.section_name,
+                "criteria": criteria.criteria_text,
+                "requirements": """
+                    1. Focus on finding issues and weaknesses NOT mentioned in the core feedback
+                    2. Avoid repeating points already covered
+                    3. Pay special attention to aspects specific to this criterion
+                    4. If the core feedback adequately covers this criterion, acknowledge this.
+                    5. Finally, provide a brief overall evaluation of the essay, including a proposed mark according to the evaluation criteria supplied.
+                    """
+            })
+            
+            # Add output format instructions
+            prompt.add_section("format_requirements", """
+                Format your response in Markdown:
+                1. Start with a brief acknowledgment of what the core feedback covered well
+                2. Use bullet points for new issues identified
+                3. Use bold for key terms or concepts
+                4. Include specific examples from the text where possible
+                """)
+
+            final_prompt = prompt.build()
+            
+            # Log the prompt for debugging
+            api_logger.info(f"Moderation prompt for {criteria.section_name}:")
+            api_logger.info(final_prompt)
+
+            # Generate moderated feedback using the appropriate API
+            if model.startswith('claude'):
+                response = client_anthropic.messages.create(
+                    model=model,
+                    system="You are an expert academic skilled in assessing student work. Format all responses in Markdown.",
+                    messages=[{"role": "user", "content": final_prompt}],
+                    max_tokens=1000
+                )
+                moderated_text = response.content[0].text.strip()
+            else:
+                response = client_openai.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "You are an expert academic writing moderator. Format all responses in Markdown."},
+                        {"role": "user", "content": final_prompt}
+                    ]
+                )
+                moderated_text = response.choices[0].message.content.strip()
+            
+            # Store the moderated feedback
+            moderated_feedback[evaluation.id] = moderated_text
+            
+            # Update the evaluation in the database
+            evaluation.evaluation_text = moderated_text
+            db.session.add(evaluation)
+        
+        db.session.commit()
+        
+        return jsonify({"moderated_feedback": moderated_feedback})
+        
+    except Exception as e:
+        db.session.rollback()
+        api_logger.error(f"Error in moderate_feedback: {str(e)}")
+        api_logger.error("Full traceback:", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
