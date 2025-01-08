@@ -9,167 +9,159 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="sidebar">
-        <h3>{{ rubric_name }}</h3>
-        <div class="related-papers">
-            {% if related_papers %}
-                {% for paper in related_papers %}
-                    <a href="{{ url_for('paper', file_hash=paper[0]) }}" 
-                       class="related-paper-link {% if paper[2] %}current-paper{% endif %}">
-                        {{ paper[1] }}
-                    </a>
-                {% endfor %}
-            {% else %}
-                <p>No other essays marked with this rubric</p>
-            {% endif %}
-        </div>
-    </div>
-
     <div class="container">
         <h1><a href="{{ url_for('index') }}">Essay Feedback Assistant</a></h1>
-        <div class="filename-container">
-            <h2 class="filename" id="filenameDisplay" onclick="editFilename()">{{ filename }}</h2>
-            <input type="text" id="filenameInput" value="{{ filename }}" style="display:none;" onblur="saveFilename()" onkeypress="checkEnter(event)">
-        </div>
-
-        <div class="navigation-links">
-            <a href="{{ url_for('logout') }}">Logout</a>
-            {% if current_user.is_admin %}
-                <a href="{{ url_for('admin') }}">Admin Panel</a>
-            {% endif %}
-        </div>
-
-        <div id="pdfViewer">
-            <h2>PDF Document</h2>
-            <iframe
-                src="{{ url_for('static', filename=pdf_path) }}"
-                width="100%"
-                height="720px"
-                style="border: 1px solid #333; border-radius: 4px;">
-            </iframe>
-        </div>
-
-        <!-- Evaluations Container -->
-        <div class="evaluations-container">
-            <!-- Essay Summary -->
-            {% for evaluation in evaluations if evaluation.section_name == '_summary' %}
-            <div class="evaluation-section">
-                <h3>Essay Summary</h3>
-                <div class="evaluation-content" id="evaluation-{{ evaluation.id }}">{{ evaluation.evaluation_text }}</div>
-                <button class="copy-btn" onclick="copyToClipboard('evaluation-{{ evaluation.id }}')">Copy</button>
+        <div class="header-container">
+            <div class="filename-container">
+                <h2 class="filename" id="filenameDisplay" onclick="editFilename()">{{ filename }}</h2>
+                <input type="text" id="filenameInput" value="{{ filename }}" style="display:none;" onblur="saveFilename()" onkeypress="checkEnter(event)">
             </div>
-            {% endfor %}
+            <div class="navigation-links">
+                <a href="{{ url_for('logout') }}">Logout</a>
+                {% if current_user.is_admin %}
+                    <a href="{{ url_for('admin') }}">Admin Panel</a>
+                {% endif %}
+            </div>
+        </div>
 
-            <!-- Core Feedback Section -->
-            <div class="evaluation-section">
-                <h3>Core Feedback</h3>
-                <textarea id="additionalFeedback" placeholder="Enter your core feedback for this essay here...">{{ saved_additional_feedback or '' }}</textarea>
-                <div class="button-row">
-                    <button id="saveAdditionalFeedback" onclick="saveAdditionalFeedback()">Save Core Feedback</button>
-                    <button id="moderateFeedback" 
-                            onclick="moderateFeedback()" 
-                            {% if not saved_additional_feedback %}disabled{% endif %}>
-                        Evaluate Feedback
-                    </button>
+        <div class="main-container">
+            <!-- Left Panel - PDF -->
+            <div class="pdf-panel">
+                <div id="pdfViewer">
+                    <iframe
+                        src="{{ url_for('static', filename=pdf_path) }}"
+                        width="100%"
+                        height="calc(100vh - 200px)"
+                        style="border: 1px solid #333; border-radius: 4px;">
+                    </iframe>
                 </div>
             </div>
 
-            <!-- Criteria Evaluations -->
-            {% for evaluation in evaluations if evaluation.section_name not in ['_summary', '_overall'] %}
-            <div class="evaluation-section">
-                <h3>{{ evaluation.section_name }}</h3>
-                <div class="evaluation-content">
-                    <textarea 
-                        class="feedback-textarea" 
-                        id="evaluation-{{ evaluation.id }}"
-                        data-evaluation-id="{{ evaluation.id }}"
-                        spellcheck="true"
-                        {% if not evaluation.evaluation_text %}disabled{% endif %}
-                        placeholder="Criteria-specific feedback will appear here after moderation...">{{ evaluation.evaluation_text }}</textarea>
-                    <button class="save-feedback-btn" onclick="saveFeedback({{ evaluation.id }})" {% if not evaluation.evaluation_text %}disabled{% endif %}>
-                        Save Changes
-                    </button>
-                    <div class="save-status" id="save-status-{{ evaluation.id }}"></div>
-                </div>
-            </div>
-            {% endfor %}
-
-            <!-- Numerical Mark -->
-            <div class="evaluation-section">
-                <h3>Numerical Mark</h3>
-                <div class="mark-input-container">
-                    <input type="number" id="numericalMark" min="0" max="100" step="0.5" 
-                           value="{{ saved_feedback.mark if saved_feedback and saved_feedback.mark }}"
-                           placeholder="Enter mark (0-100)">
-                    <button id="saveMark" onclick="saveMark()">Save Mark</button>
-                </div>
-            </div>
-
-            <!-- Consolidated Feedback -->
-            <div class="evaluation-section">
-                <h3>Consolidated Feedback</h3>
-                <div class="consolidated-feedback-controls">
-                    <!-- Buttons on first line -->
+            <!-- Middle Panel - Evaluations -->
+            <div class="evaluations-panel">
+                <!-- Core Feedback Section -->
+                <div class="evaluation-section">
+                    <h3>Core Feedback</h3>
+                    <textarea id="additionalFeedback" 
+                              placeholder="Enter your core feedback here...">{{ saved_feedback.additional_feedback if saved_feedback }}</textarea>
                     <div class="button-row">
-                        <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
-                            Generate Consolidated Feedback
-                        </button>
-                        <button id="saveConsolidatedFeedback" onclick="saveConsolidatedFeedback()" style="display: none;">
-                            Save Feedback
-                        </button>
-                        <button id="polishFeedback" onclick="polishFeedback()" 
-                                style="display: {% if saved_consolidated_feedback %}inline-block{% else %}none{% endif %};">
-                            Polish Feedback
+                        <button id="saveAdditionalFeedback" onclick="saveAdditionalFeedback()">Save Core Feedback</button>
+                        <button id="moderateFeedback" onclick="moderateFeedback()" {% if not saved_feedback.additional_feedback %}disabled{% endif %}>
+                            Moderate Feedback
                         </button>
                     </div>
-                    <!-- Toggles on second line -->
-                    <div class="toggle-row">
-                        <div class="toggle-container">
-                            <label class="switch">
-                                <input type="checkbox" id="showMarkdownToggle" onchange="toggleMarkdownView()">
-                                <span class="slider round"></span>
-                            </label>
-                            <span class="toggle-label">Show Markdown</span>
-                        </div>
-                        <div class="toggle-container">
-                            <label class="switch">
-                                <input type="checkbox" id="alignToMarkToggle">
-                                <span class="slider round"></span>
-                            </label>
-                            <span class="toggle-label">Align language to mark</span>
-                        </div>
+                </div>
+
+                <!-- Criteria-specific Evaluations -->
+                {% for evaluation in evaluations %}
+                <div class="evaluation-section">
+                    <h3>{{ evaluation.section_name }}</h3>
+                    <div class="evaluation-content">
+                        <textarea 
+                            class="feedback-textarea" 
+                            id="evaluation-{{ evaluation.id }}"
+                            data-evaluation-id="{{ evaluation.id }}"
+                            spellcheck="true"
+                            {% if not evaluation.evaluation_text %}disabled{% endif %}
+                            placeholder="Criteria-specific feedback will appear here after moderation...">{{ evaluation.evaluation_text }}</textarea>
+                        <button class="save-feedback-btn" onclick="saveFeedback({{ evaluation.id }})" {% if not evaluation.evaluation_text %}disabled{% endif %}>
+                            Save Changes
+                        </button>
+                        <div class="save-status" id="save-status-{{ evaluation.id }}"></div>
                     </div>
                 </div>
-                <!-- Rendered markdown view -->
-                <div id="consolidatedFeedback" class="evaluation-content markdown-rendered">
-                    {{ saved_consolidated_feedback | markdown if saved_consolidated_feedback }}
-                </div>
-                <!-- Raw markdown view -->
-                <textarea id="consolidatedFeedbackRaw" class="feedback-textarea" style="display: none;">{{ saved_consolidated_feedback }}</textarea>
-            </div>
-        </div>
-
-        <!-- Full Text Section -->
-        <div class="full-text summary">
-            <h2 class="collapsible" onclick="toggleFullText()">Full Text</h2>
-            <div class="summary-content" id="fullTextContent" style="display: none;">
-                <div class="text-content">{{ full_text }}</div>
-                <button class="copy-btn" onclick="copyFullText()">Copy</button>
-            </div>
-        </div>
-
-        <!-- Chat Interface -->
-        <div id="chatInterface">
-            <h2>Chat about the Essay <button id="clearChat" onclick="clearChat()">Clear Chat</button></h2>
-            <div id="chatMessages">
-                {% for chat in chats %}
-                    <p><strong>You:</strong> {{ chat[0] }}</p>
-                    <p><strong>AI:</strong> {{ chat[1] }}</p>
                 {% endfor %}
+
+                <!-- Numerical Mark -->
+                <div class="evaluation-section">
+                    <h3>Numerical Mark</h3>
+                    <div class="mark-input-container">
+                        <input type="number" id="numericalMark" min="0" max="100" step="0.5" 
+                               value="{{ saved_feedback.mark if saved_feedback and saved_feedback.mark }}"
+                               placeholder="Enter mark (0-100)">
+                        <button id="saveMark" onclick="saveMark()">Save Mark</button>
+                    </div>
+                </div>
+
+                <!-- Consolidated Feedback -->
+                <div class="evaluation-section">
+                    <h3>Consolidated Feedback</h3>
+                    <div class="consolidated-feedback-controls">
+                        <div class="button-row">
+                            <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
+                                Generate Consolidated Feedback
+                            </button>
+                            <button id="saveConsolidatedFeedback" onclick="saveConsolidatedFeedback()" style="display: none;">
+                                Save Feedback
+                            </button>
+                            <button id="polishFeedback" onclick="polishFeedback()" 
+                                    style="display: {% if saved_consolidated_feedback %}inline-block{% else %}none{% endif %};">
+                                Polish Feedback
+                            </button>
+                        </div>
+                        <div class="toggle-row">
+                            <div class="toggle-container">
+                                <label class="switch">
+                                    <input type="checkbox" id="showMarkdownToggle" onchange="toggleMarkdownView()">
+                                    <span class="slider round"></span>
+                                </label>
+                                <span class="toggle-label">Show Markdown</span>
+                            </div>
+                            <div class="toggle-container">
+                                <label class="switch">
+                                    <input type="checkbox" id="alignToMarkToggle">
+                                    <span class="slider round"></span>
+                                </label>
+                                <span class="toggle-label">Align language to mark</span>
+                            </div>
+                        </div>
+                    </div>
+                    <textarea id="consolidatedFeedbackRaw" style="display: none;">{{ saved_consolidated_feedback }}</textarea>
+                    <div id="consolidatedFeedback" class="evaluation-content markdown-rendered">
+                        {{ saved_consolidated_feedback | markdown if saved_consolidated_feedback }}
+                    </div>
+                </div>
+
+                <!-- Chat Interface -->
+                <div id="chatInterface" class="evaluation-section">
+                    <h3>Chat about the Essay <button id="clearChat" onclick="clearChat()">Clear Chat</button></h3>
+                    <div id="chatMessages">
+                        {% for chat in chats %}
+                            <p><strong>You:</strong> {{ chat[0] }}</p>
+                            <p><strong>AI:</strong> {{ chat[1] }}</p>
+                        {% endfor %}
+                    </div>
+                    <div id="chatInput">
+                        <input type="text" id="userMessage" placeholder="Ask a question about the essay...">
+                        <button onclick="sendMessage()">Send</button>
+                    </div>
+                </div>
+
+                <!-- Full Text Section -->
+                <div class="full-text evaluation-section">
+                    <h3 class="collapsible" onclick="toggleFullText()">Full Text</h3>
+                    <div class="summary-content" id="fullTextContent" style="display: none;">
+                        <div class="text-content">{{ full_text }}</div>
+                        <button class="copy-btn" onclick="copyFullText()">Copy</button>
+                    </div>
+                </div>
             </div>
-            <div id="chatInput">
-                <input type="text" id="userMessage" placeholder="Ask a question about the essay...">
-                <button onclick="sendMessage()">Send</button>
+
+            <!-- Right Panel - Related Papers -->
+            <div class="related-papers-panel">
+                <h3>{{ rubric_name }}</h3>
+                <div class="related-papers">
+                    {% if related_papers %}
+                        {% for paper in related_papers %}
+                            <a href="{{ url_for('paper', file_hash=paper[0]) }}" 
+                               class="related-paper-link {% if paper[2] %}current-paper{% endif %}">
+                                {{ paper[1] }}
+                            </a>
+                        {% endfor %}
+                    {% else %}
+                        <p>No other essays marked with this rubric</p>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>

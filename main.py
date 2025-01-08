@@ -650,25 +650,23 @@ def generate_consolidated_feedback():
         
         # Add initial task summary
         prompt.add_section("initial_task_summary", 
-            "Create a comprehensive feedback statement that incorporates additional feedback "
+            "Create a comprehensive feedback statement that incorporates core feedback "
             "and criteria-specific evaluations.")
         
         # Add feedback content
-        prompt.add_section("feedback_content", "Below is the additional feedback and the criteria-specific evaluations:", subsections={
-            "additional_feedback": additional_feedback,
+        prompt.add_section("feedback_content", "Below is the core feedback and the criteria-specific evaluations:", subsections={
+            "core_feedback": additional_feedback,
             "criteria_feedback": feedback_text
         })
         
         # Add detailed instructions with subsections
         instructions_subsections = {
-            "language_preservation": (
-                "**Preserve Original Language**: Retain the unique wording, tone, and phrasing wherever possible"
-            ),
+            "language_preservation": preserve_language_instruction,
             "feedback_handling": """
-                1. The Additional Feedback section MUST be included word-for-word, organized into appropriate sections
+                1. The Additional Feedback section MUST be included first, organized into appropriate sections
                 2. Selectively add relevant points from criteria-specific feedback
-                3. Do not repeat points already covered in additional feedback
-                4. Align criteria-specific feedback to the tone and style of additional feedback""",
+                3. Do not repeat points already covered in the core feedback
+                4. Align criteria-specific feedback to the tone and style of core feedback""",
             "section_structure": f"Organize feedback using these exact section headings: {', '.join(criteria_names)}",
             "formatting": """Format using Markdown:
                 - Headers (##) for main sections
@@ -687,9 +685,9 @@ def generate_consolidated_feedback():
         
         # Add analysis request
         prompt.add_section("analysis_request", 
-            "Organize the additional feedback into the required sections and enhance it with "
+            "Organize the core feedback into the required sections and enhance it with "
             "relevant points from the criteria-specific evaluations while preserving the "
-            "original additional feedback text.")
+            "original additional feedback in line with the instructions provided above.")
 
         final_prompt = prompt.build()
         system_msg = "You are a helpful writing assistant. Please format all responses as valid Markdown."
@@ -1136,9 +1134,8 @@ def moderate_feedback(file_hash):
             
             # Add context sections
             prompt.add_section("task_description", 
-                "Your task is to moderate the existing feedback of this essay, identifying gaps and potential issues "
-                "that weren't spotted by the original grader. Below you will find the essay text, the core feedback provided by the grader, and the evaluation criteria you should use to evaluate the essay."
-                "Along with identifying gaps, you should provide a brief overall evaluation of the essay, including a proposed mark according to the evaluation criteria supplied.")
+                "Your task is to evaluate the scope and fairness of the existing feedback of this essay, identifying gaps and potential issues "
+                "that weren't spotted by the original grader. Below you will find the essay text, the core feedback provided by the grader, and the evaluation criteria you should use to evaluate the essay.")
             
             prompt.add_section("essay_text", paper.full_text)
             
@@ -1149,9 +1146,9 @@ def moderate_feedback(file_hash):
                 "section": criteria.section_name,
                 "criteria": criteria.criteria_text,
                 "requirements": """
-                    1. Focus on finding issues and weaknesses NOT mentioned in the core feedback
+                    1. Focus on finding issues and weaknesses NOT mentioned in the core feedback, and assessing whether the existing feedback is a fair and accurate assessment of the essay.
                     2. Avoid repeating points already covered
-                    3. Pay special attention to aspects specific to this criterion
+                    3. Pay special attention to aspects specific to this marking criterion given above.
                     4. If the core feedback adequately covers this criterion, acknowledge this.
                     5. Finally, provide a brief overall evaluation of the essay, including a proposed mark according to the evaluation criteria supplied.
                     """

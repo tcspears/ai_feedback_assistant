@@ -10,8 +10,23 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="container">
+    <div class="container index-container">
         <h1>Essay Feedback Assistant</h1>
+        
+        <!-- Add this section for flash messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash-message {{ category }}">
+                            {{ message }}
+                            <button class="close-flash" onclick="this.parentElement.remove()">&times;</button>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
         <a href="{{ url_for('logout') }}">Logout</a>
         {% if current_user.is_admin %}
             <a href="{{ url_for('admin') }}">Admin Panel</a>

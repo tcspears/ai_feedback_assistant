@@ -34,13 +34,13 @@
             </tr>
             {% for user in users %}
             <tr>
-                <td>{{ user[0] }}</td>
-                <td>{{ user[1] }}</td>
-                <td>{{ 'Yes' if user[2] else 'No' }}</td>
+                <td>{{ user.id }}</td>
+                <td>{{ user.username }}</td>
+                <td>{{ 'Yes' if user.is_admin else 'No' }}</td>
                 <td>
                     <form method="POST">
                         <input type="hidden" name="action" value="delete">
-                        <input type="hidden" name="user_id" value="{{ user[0] }}">
+                        <input type="hidden" name="user_id" value="{{ user.id }}">
                         <input type="submit" value="Delete">
                     </form>
                 </td>
