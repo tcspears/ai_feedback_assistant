@@ -166,6 +166,11 @@
                         <p>No other essays marked with this rubric</p>
                     {% endif %}
                 </div>
+                {% if related_papers %}
+                    <div class="navigation-links" style="margin-top: 20px;">
+                        <a href="{{ url_for('export_feedback', file_hash=file_hash) }}" class="export-btn">Export Feedback</a>
+                    </div>
+                {% endif %}
             </div>
         </div>
     </div>

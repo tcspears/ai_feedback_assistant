@@ -1,5 +1,5 @@
 # Flask backend (app.py)
-from flask import Flask, jsonify, render_template, request, redirect, url_for, flash, session
+from flask import Flask, jsonify, render_template, request, redirect, url_for, flash, session, send_file
 from flask_dropzone import Dropzone
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -28,6 +28,9 @@ from functools import wraps
 import logging
 from typing import Dict, Optional
 from dataclasses import dataclass, field
+import csv
+from io import StringIO
+from io import BytesIO
 
 @dataclass
 class StructuredPrompt:
@@ -1244,6 +1247,77 @@ def moderate_feedback(file_hash):
         db.session.rollback()
         api_logger.error(f"Error in moderate_feedback: {str(e)}")
         api_logger.error("Full traceback:", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/export_feedback/<file_hash>')
+@login_required
+def export_feedback(file_hash):
+    try:
+        # Get current paper and its rubric ID
+        current_paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get the rubric ID through evaluations
+        rubric_id = (db.session.query(RubricCriteria.rubric_id)
+                    .join(Evaluation, Evaluation.criteria_id == RubricCriteria.id)
+                    .filter(Evaluation.paper_id == current_paper.id)
+                    .first())
+        
+        if not rubric_id:
+            return jsonify({"error": "No rubric found"}), 404
+            
+        # Get all papers with the same rubric
+        papers = (Paper.query
+                 .join(Evaluation)
+                 .join(RubricCriteria)
+                 .filter(RubricCriteria.rubric_id == rubric_id[0])
+                 .distinct()
+                 .all())
+        
+        # Create CSV in memory
+        si = StringIO()
+        writer = csv.writer(si)
+        writer.writerow(['Filename', 'Mark', 'Consolidated Feedback'])
+        
+        for paper in papers:
+            # Get saved feedback for this paper
+            feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+            mark = feedback.mark if feedback else None
+            consolidated = feedback.consolidated_feedback if feedback else ''
+            
+            # Clean consolidated feedback text (remove markdown and newlines)
+            if consolidated:
+                # Remove markdown headers
+                consolidated = re.sub(r'#{1,6}\s+', '', consolidated)
+                # Replace newlines with spaces
+                consolidated = consolidated.replace('\n', ' ')
+                # Remove multiple spaces
+                consolidated = re.sub(r'\s+', ' ', consolidated)
+            
+            writer.writerow([paper.filename, mark, consolidated])
+        
+        # Get rubric name for filename
+        rubric = Rubric.query.get(rubric_id[0])
+        safe_rubric_name = re.sub(r'[^\w\s-]', '', rubric.name)
+        filename = f"{safe_rubric_name}_feedback.csv"
+        
+        # Convert to bytes for sending
+        output = si.getvalue().encode('utf-8-sig')  # Use UTF-8 with BOM for Excel compatibility
+        si.close()
+        
+        # Create BytesIO object
+        mem = BytesIO()
+        mem.write(output)
+        mem.seek(0)
+        
+        return send_file(
+            mem,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        print(f"Error exporting feedback: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
