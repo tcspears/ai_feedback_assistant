@@ -1165,7 +1165,7 @@ def moderate_feedback(file_hash):
             
             # Add context sections
             prompt.add_section("task_description", 
-                "Your task is to evaluate the scope and fairness of the existing feedback of this essay, identifying gaps and potential issues "
+                "Your task is to evaluate the scope and fairness of the existing feedback of this essay, identifying strengths and weaknesses "
                 "that weren't spotted by the original grader. Below you will find the essay text, the core feedback provided by the grader, and the evaluation criteria you should use to evaluate the essay.")
             
             prompt.add_section("essay_text", paper.full_text)
@@ -1177,11 +1177,12 @@ def moderate_feedback(file_hash):
                 "section": criteria.section_name,
                 "criteria": criteria.criteria_text,
                 "requirements": """
-                    1. Focus on finding issues and weaknesses NOT mentioned in the core feedback, and assessing whether the existing feedback is a fair and accurate assessment of the essay.
-                    2. Avoid repeating points already covered
-                    3. Pay special attention to aspects specific to this marking criterion given above.
-                    4. If the core feedback adequately covers this criterion, acknowledge this.
-                    5. Finally, provide a brief overall evaluation of the essay, including a proposed mark according to the evaluation criteria supplied.
+                    1. Focus on finding both strengths and weaknesses NOT mentioned in the core feedback, and assessing whether the existing feedback is a fair and accurate assessment of the essay.
+                    2. Cite specific examples from the text where possible.
+                    3. Avoid repeating points already covered.
+                    4. Pay special attention to aspects specific to this marking criterion given above.
+                    5. If the core feedback adequately covers this criterion, acknowledge this.
+                    6. Finally, provide a brief overall evaluation of the essay, including a proposed mark according to the evaluation criteria supplied.
                     """
             })
             
