@@ -862,3 +862,18 @@ label[for="is_admin"] {
     outline: none;
     border-color: #4CAF50;
 }
+
+.grading-timer {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    font-family: monospace;
+    font-size: 1.1em;
+    color: #666;
+}
+
+.grading-timer span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}

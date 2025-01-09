@@ -323,6 +323,30 @@ def paper(file_hash):
             if criteria and criteria.rubric:
                 rubric_name = criteria.rubric.name
     
+    # Get the upload time for this file
+    upload_time = paper.created_at
+    
+    # Calculate average grading time for this rubric
+    avg_time = (db.session.query(func.avg(
+        func.strftime('%s', SavedFeedback.updated_at) - 
+        func.strftime('%s', Paper.created_at)
+    ))
+    .select_from(Paper)  # Explicitly specify the starting point
+    .join(SavedFeedback)  # Join to SavedFeedback
+    .join(Evaluation, Evaluation.paper_id == Paper.id)  # Join to Evaluation with explicit condition
+    .join(RubricCriteria, RubricCriteria.id == Evaluation.criteria_id)  # Join to RubricCriteria with explicit condition
+    .filter(
+        RubricCriteria.rubric_id == current_rubric_id[0],
+        SavedFeedback.updated_at.isnot(None)
+    ).scalar())
+    
+    # Format average time as HH:MM:SS
+    if avg_time:
+        avg_seconds = int(avg_time)  # Now avg_time is already in seconds
+        average_time = f"{avg_seconds // 3600:02d}:{(avg_seconds % 3600) // 60:02d}:{avg_seconds % 60:02d}"
+    else:
+        average_time = None
+
     return render_template('paper.html',
                          filename=paper.filename,
                          full_text=paper.full_text,
@@ -335,7 +359,9 @@ def paper(file_hash):
                          saved_feedback=saved_feedback,
                          saved_additional_feedback=saved_feedback.additional_feedback if saved_feedback else None,
                          saved_consolidated_feedback=saved_feedback.consolidated_feedback if saved_feedback else None,
-                         pdf_path=paper.pdf_path.replace('static/', ''))
+                         pdf_path=paper.pdf_path.replace('static/', ''),
+                         upload_time=upload_time.isoformat(),
+                         average_time=average_time)
 
 @app.route('/chat/<file_hash>', methods=['POST'])
 @login_required
