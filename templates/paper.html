@@ -120,6 +120,11 @@
                     <div id="consolidatedFeedback" class="evaluation-content markdown-rendered">
                         {{ saved_consolidated_feedback | markdown if saved_consolidated_feedback }}
                     </div>
+                    <div style="text-align: right; margin-top: 10px;">
+                        <button id="copyConsolidatedFeedback" onclick="copyConsolidatedFeedback()">
+                            Copy Feedback
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Chat Interface -->
@@ -755,6 +760,26 @@
             console.error('Error:', error);
         }
     }, 1000);
+
+    function copyConsolidatedFeedback() {
+        const rawFeedback = document.getElementById('consolidatedFeedbackRaw');
+        const renderedFeedback = document.getElementById('consolidatedFeedback');
+        const textToCopy = document.getElementById('showMarkdownToggle').checked ? 
+            rawFeedback.value : 
+            renderedFeedback.innerText;
+        
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            const button = document.getElementById('copyConsolidatedFeedback');
+            const originalText = button.textContent;
+            button.textContent = 'Copied!';
+            setTimeout(() => {
+                button.textContent = originalText;
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy text:', err);
+            alert('Failed to copy text to clipboard');
+        });
+    }
     </script>
 </body>
 </html>

@@ -94,20 +94,20 @@ h1 a:hover {
 }
 
 .pdf-panel {
-    flex: 0 0 40%;
+    flex: 0 0 50%;
     overflow: hidden;
     display: flex;
     flex-direction: column;
 }
 
 .evaluations-panel {
-    flex: 0 0 40%;
+    flex: 0 0 38%;
     overflow-y: auto;
     padding-right: 20px;
 }
 
 .related-papers-panel {
-    flex: 0 0 20%;
+    flex: 0 0 12%;
     overflow-y: auto;
     background: var(--container-bg);
     padding: 20px;
@@ -326,15 +326,19 @@ h1 a:hover {
 .collapsible {
     cursor: pointer;
     padding: 10px;
-    background: var(--primary-color);
+    background: var(--container-bg);
     border: none;
     border-radius: 4px;
-    color: white;
+    color: var(--text-color);
     margin-bottom: 10px;
+    width: 100%;
+    text-align: left;
+    font-size: 1.17em;
+    font-weight: bold;
 }
 
 .collapsible:hover {
-    background: var(--hover-color);
+    background: var(--summary-bg);
 }
 
 /* Related Papers Styles */
@@ -832,4 +836,23 @@ label[for="is_admin"] {
     max-width: 1200px !important;  /* More narrow than paper.html */
     margin: 0 auto;
     padding: 0 40px;  /* Larger padding on sides */
+}
+
+/* Fix for filename input styling */
+#filenameInput {
+    background: var(--container-bg);
+    border: 1px solid var(--border-color);
+    color: #4CAF50;
+    font-size: 1.4em;
+    padding: 5px;
+    border-radius: 4px;
+    width: auto;
+    min-width: 200px;
+    font-family: inherit;
+    margin: 0;
+}
+
+#filenameInput:focus {
+    outline: none;
+    border-color: #4CAF50;
 }

@@ -342,40 +342,71 @@ def chat(file_hash):
     model = data['model']
 
     paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+    chat_history = Chat.query.filter_by(paper_id=paper.id).order_by(Chat.created_at).all()
     
-    system_message = """You are an AI assistant specialized in discussing essays. You have access to the full essay text. Please help answer any questions about the essay."""
+    # Get grade descriptors
+    grade_descriptors = GradeDescriptors.query.order_by(GradeDescriptors.range_start.desc()).all()
+    descriptors_text = "\n".join([
+        f"- {d.range_start}-{d.range_end}%: {d.descriptor_text}"
+        for d in grade_descriptors
+    ])
+    
+    # Create initial context prompt using StructuredPrompt
+    prompt = StructuredPrompt()
+    prompt.add_section("context", 
+        "You are an AI assistant specialized in discussing academic essays. "
+        "You have access to both the full essay text and the grading criteria.")
+    
+    prompt.add_section("essay_content", paper.full_text)
+    
+    prompt.add_section("grading_framework", 
+        "Here is how essays are evaluated at different grade levels:\n" + descriptors_text)
+    
+    prompt.add_section("instructions", 
+        "Please keep this essay and grading framework in mind during our conversation. "
+        "When discussing the essay's quality or suggesting improvements, consider these "
+        "grading criteria and reference specific parts of the text when relevant.")
 
-    # Generate AI response using existing client logic
+    initial_context = prompt.build()
+    system_msg = "You are an expert in academic writing assessment. Please provide detailed, constructive responses that help users understand and improve their essays."
+
+    # Build messages array with history
+    messages = []
     if model.startswith('claude'):
+        messages = [{
+            "role": "user",
+            "content": initial_context
+        }]
+        # Add chat history
+        for chat in chat_history:
+            messages.append({"role": "user", "content": chat.user_message})
+            messages.append({"role": "assistant", "content": chat.ai_response})
+        # Add current message
+        messages.append({"role": "user", "content": user_message})
+        
         response = client_anthropic.messages.create(
             model=model,
-            system=system_message,
-            messages=[{
-                "role": "user",
-                "content": f"""Here is the essay text:
-
-{paper.full_text}
-
-Based on this essay, please answer the following question:
-
-{user_message}"""
-            }],
+            system=system_msg,
+            messages=messages,
             max_tokens=1000
         )
         ai_message = response.content[0].text.strip()
     else:
+        messages = [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": initial_context},
+            {"role": "assistant", "content": "I understand. I'll keep the essay content and grading criteria in mind during our conversation. What would you like to discuss about it?"}
+        ]
+        # Add chat history
+        for chat in chat_history:
+            messages.append({"role": "user", "content": chat.user_message})
+            messages.append({"role": "assistant", "content": chat.ai_response})
+        # Add current message
+        messages.append({"role": "user", "content": user_message})
+        
         response = client_openai.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": f"""Here is the essay text:
-
-{paper.full_text}
-
-Based on this essay, please answer the following question:
-
-{user_message}"""}
-            ]
+            messages=messages
         )
         ai_message = response.choices[0].message.content.strip()
 
