@@ -1148,6 +1148,10 @@ def moderate_feedback(file_hash):
         
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
         
+        # Get the saved feedback to access the numerical mark
+        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+        proposed_mark = saved_feedback.mark if saved_feedback else None
+        
         # Get all criteria evaluations for this paper
         evaluations = (Evaluation.query
                       .join(RubricCriteria)
@@ -1172,6 +1176,11 @@ def moderate_feedback(file_hash):
             
             prompt.add_section("core_feedback", core_feedback)
             
+            # Add the proposed mark section
+            if proposed_mark is not None:
+                prompt.add_section("proposed_mark", 
+                    f"The grader's proposed mark for this essay is: {proposed_mark}%")
+            
             # Add criteria-specific instructions
             prompt.add_section("criteria_focus", "", subsections={
                 "section": criteria.section_name,
@@ -1182,7 +1191,7 @@ def moderate_feedback(file_hash):
                     3. Avoid repeating points already covered.
                     4. Pay special attention to aspects specific to this marking criterion given above.
                     5. If the core feedback adequately covers this criterion, acknowledge this.
-                    6. Finally, provide a brief overall evaluation of the essay, including a proposed mark according to the evaluation criteria supplied.
+                    6. Finally, provide a brief overall evaluation of the essay, including whether the proposed mark seems appropriate according to the evaluation criteria supplied.
                     """
             })
             
