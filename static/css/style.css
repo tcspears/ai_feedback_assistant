@@ -160,7 +160,8 @@ h1 a:hover {
     resize: vertical;
     margin-bottom: 10px;
     font-family: inherit;
-    line-height: 1.5;
+    line-height: 1.6;
+    font-size: 15px;
 }
 
 .button-row {
@@ -180,7 +181,8 @@ h1 a:hover {
     resize: vertical;
     margin-bottom: 15px;
     font-family: inherit;
-    line-height: 1.5;
+    line-height: 1.6;
+    font-size: 16px;
     box-sizing: border-box;
 }
 
@@ -226,7 +228,8 @@ h1 a:hover {
     resize: vertical;
     margin: 15px 0;
     font-family: inherit;
-    line-height: 1.5;
+    line-height: 1.6;
+    font-size: 15px;
     box-sizing: border-box;
 }
 
@@ -241,6 +244,8 @@ h1 a:hover {
     border-radius: 4px;
     box-sizing: border-box;
     width: 100%;
+    font-size: 15px;
+    line-height: 1.6;
 }
 
 /* Chat Interface Styles */
@@ -272,6 +277,7 @@ h1 a:hover {
     border: 1px solid var(--border-color);
     border-radius: 4px;
     color: var(--text-color);
+    font-size: 15px;
 }
 
 #chatInput button {
