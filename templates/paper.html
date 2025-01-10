@@ -846,6 +846,17 @@
         elapsedSeconds++;
         document.getElementById('currentTime').textContent = formatTime(elapsedSeconds);
     }, 1000);
+
+    // Update average time every minute
+    setInterval(() => {
+        fetch(`/get_average_time/${fileHash}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.average_time) {
+                    document.getElementById('averageTime').textContent = data.average_time;
+                }
+            });
+    }, 60000); // Update every minute
     </script>
 </body>
 </html>

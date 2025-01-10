@@ -723,16 +723,15 @@ def generate_consolidated_feedback():
         instructions_subsections = {
             "language_preservation": preserve_language_instruction,
             "feedback_handling": """
-                1. The Additional Feedback section MUST be included first, organized into appropriate sections
-                2. Selectively add relevant points from criteria-specific feedback
-                3. Do not repeat points already covered in the core feedback
-                4. Align criteria-specific feedback to the tone and style of core feedback""",
+                1. The Additional Feedback section MUST be included first, *word-for-word*, organized into appropriate sections
+                2. Selectively add relevant points from criteria-specific feedback while matching their tone and style to the tone and style of core feedback
+                3. Do not repeat points already covered in the core feedback""",
             "section_structure": f"Organize feedback using these exact section headings: {', '.join(criteria_names)}",
             "formatting": """Format using Markdown:
                 - Headers (##) for main sections
                 - Lists (- or *) for key points
-                - Bold (**) for emphasis
-                - Line breaks between paragraphs"""
+                - Line breaks between paragraphs
+                - Do *not* include any bold or italic formatting in your response, even if these appear in the original feedback"""
         }
         
         # Add grade descriptor alignment if needed
@@ -1345,6 +1344,44 @@ def export_feedback(file_hash):
     except Exception as e:
         print(f"Error exporting feedback: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/get_average_time/<file_hash>')
+@login_required
+def get_average_time(file_hash):
+    paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+    
+    # Get the rubric ID for the current paper
+    current_rubric_id = (db.session.query(RubricCriteria.rubric_id)
+                        .join(Evaluation, Evaluation.criteria_id == RubricCriteria.id)
+                        .filter(Evaluation.paper_id == paper.id)
+                        .first())
+    
+    if not current_rubric_id:
+        return jsonify({"average_time": None})
+    
+    # Calculate average grading time using first save time
+    avg_time = (db.session.query(func.avg(
+        func.strftime('%s', func.min(SavedFeedback.updated_at)) - 
+        func.strftime('%s', Paper.created_at)
+    ))
+    .select_from(Paper)
+    .join(SavedFeedback)
+    .join(Evaluation, Evaluation.paper_id == Paper.id)
+    .join(RubricCriteria, RubricCriteria.id == Evaluation.criteria_id)
+    .filter(
+        RubricCriteria.rubric_id == current_rubric_id[0],
+        SavedFeedback.updated_at.isnot(None)
+    )
+    .group_by(Paper.id)  # Group by paper to get first save time per paper
+    .scalar())
+    
+    if avg_time:
+        avg_seconds = int(avg_time)
+        average_time = f"{avg_seconds // 3600:02d}:{(avg_seconds % 3600) // 60:02d}:{avg_seconds % 60:02d}"
+    else:
+        average_time = None
+        
+    return jsonify({"average_time": average_time})
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")
