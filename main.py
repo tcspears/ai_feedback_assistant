@@ -633,24 +633,11 @@ def save_mark(file_hash):
 
 @app.route('/generate_consolidated_feedback', methods=['POST'])
 @login_required
-@profile
 def generate_consolidated_feedback():
-    api_logger.info("=== ENTERING generate_consolidated_feedback ROUTE ===")
     try:
         data = request.json
-        api_logger.info("Request data received")
         additional_feedback = data['additional_feedback']
-        model = data['model']
         file_hash = data['file_hash']
-        align_to_mark = data.get('align_to_mark', False)
-        mark = data.get('mark')
-
-        api_logger.info(f"\n\n=== GENERATING CONSOLIDATED FEEDBACK ===")
-        api_logger.info(f"Timestamp: {datetime.now().isoformat()}")
-        api_logger.info(f"Model: {model}")
-        api_logger.info(f"File Hash: {file_hash}")
-        api_logger.info(f"Align to Mark: {align_to_mark}")
-        api_logger.info(f"Mark: {mark}")
         
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
         
@@ -664,152 +651,41 @@ def generate_consolidated_feedback():
                       .order_by(RubricCriteria.id)
                       .all())
         
-        # Format feedback text
-        feedback_text = "<criteria-specific-feedback>\n"
+        # Build consolidated feedback string
+        consolidated_parts = ["<core_feedback>", additional_feedback, "</core_feedback>" "\n<additional_feedback>"]
+        
+        # Add each criteria-specific feedback with its section name as a subheading
         for eval in evaluations:
             criteria = RubricCriteria.query.get(eval.criteria_id)
-            feedback_text += f"<{criteria.section_name}>\n"
-            feedback_text += f"{eval.evaluation_text}\n"
-            feedback_text += f"</{criteria.section_name}>\n"
-        feedback_text += "</criteria-specific-feedback>\n"
+            consolidated_parts.extend([
+                f"\n## {criteria.section_name}",
+                eval.evaluation_text
+            ])
         
-        # Get the criteria names for structuring the response
-        criteria_names = [RubricCriteria.query.get(eval.criteria_id).section_name 
-                         for eval in evaluations]
-
-        # Get grade descriptors if alignment is requested
-        descriptors_text = ""
-        if align_to_mark and mark is not None:
-            try:
-                mark_float = float(mark)
-                descriptor = (GradeDescriptors.query
-                            .filter(GradeDescriptors.range_start <= mark_float,
-                                   GradeDescriptors.range_end >= mark_float)
-                            .first())
-                if descriptor:
-                    descriptors_text = descriptor.descriptor_text
-                else:
-                    print(f"No descriptor found for mark {mark_float}")
-            except Exception as e:
-                print(f"Error processing mark {mark}: {str(e)}")
-                # Default to preserve original language if there's an error
-                align_to_mark = False
-
-        # Updated prompt with conditional language alignment
-        preserve_language_instruction = (
-            "**Align to Grade Descriptors**: You should strive to balance retaining the unique wording, "
-            f"tone, and phrasing wherever possible while also ensuring alignment to the specific language "
-            f"used in the marking descriptors for this essay's mark. For this essay, those descriptors "
-            f"are: {descriptors_text}"
-        ) if align_to_mark and descriptors_text else (
-            "**Preserve Original Language**: Retain the unique wording, tone, and phrasing wherever possible"
-        )
-
-        # Create prompt using StructuredPrompt class
-        prompt = StructuredPrompt()
+        consolidated_feedback = "\n\n".join(consolidated_parts)
+        consolidated_feedback = consolidated_feedback + "\n</additional_feedback>"
         
-        # Add initial task summary
-        prompt.add_section("initial_task_summary", 
-            "Create a comprehensive feedback statement that incorporates core feedback "
-            "and criteria-specific evaluations.")
-        
-        # Add feedback content
-        prompt.add_section("feedback_content", "Below is the core feedback and the criteria-specific evaluations:", subsections={
-            "core_feedback": additional_feedback,
-            "criteria_feedback": feedback_text
-        })
-        
-        # Add detailed instructions with subsections
-        instructions_subsections = {
-            "language_preservation": preserve_language_instruction,
-            "feedback_handling": """
-                1. The Additional Feedback section MUST be included first, *word-for-word*, organized into appropriate sections
-                2. Selectively add relevant points from criteria-specific feedback while matching their tone and style to the tone and style of core feedback
-                3. Do not repeat points already covered in the core feedback""",
-            "section_structure": f"Organize feedback using these exact section headings: {', '.join(criteria_names)}",
-            "formatting": """Format using Markdown:
-                - Headers (##) for main sections
-                - Lists (- or *) for key points
-                - Line breaks between paragraphs
-                - Do *not* include any bold or italic formatting in your response, even if these appear in the original feedback"""
-        }
-        
-        # Add grade descriptor alignment if needed
-        if align_to_mark and descriptors_text:
-            instructions_subsections["grade_alignment"] = (
-                f"Align feedback language with these grade descriptors: {descriptors_text}"
-            )
-            
-        prompt.add_section("detailed_instructions", "", subsections=instructions_subsections)
-        
-        # Add analysis request
-        prompt.add_section("analysis_request", 
-            "Organize the core feedback into the required sections and enhance it with "
-            "relevant points from the criteria-specific evaluations while preserving the "
-            "original additional feedback in line with the instructions provided above.")
-
-        final_prompt = prompt.build()
-        system_msg = "You are a helpful writing assistant. Please format all responses as valid Markdown."
-
-        api_logger.info("Sending prompt to API:")
-        api_logger.info(f"System Message: {system_msg}")
-        api_logger.info("Prompt:")
-        api_logger.info(final_prompt)
-
-        # Make the API call
-        if model.startswith('claude'):
-            system_msg = "You are a helpful writing assistant. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."
-            api_logger.info(f"System message: {system_msg}")
-            response = client_anthropic.messages.create(
-                model=model,
-                system=system_msg,
-                messages=[{"role": "user", "content": final_prompt}],
-                max_tokens=1000
-            )
-            consolidated_feedback = response.content[0].text.strip()
-            api_logger.info("Claude API Response received:")
-            api_logger.info(consolidated_feedback)
-        else:
-            system_msg = "You are a helpful writing assistant. Please format all of your responses as valid Markdown. Use headings, lists, and other Markdown constructs where appropriate."
-            api_logger.info(f"System message: {system_msg}")
-            response = client_openai.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": final_prompt}
-                ]
-            )
-            consolidated_feedback = response.choices[0].message.content.strip()
-            api_logger.info("OpenAI API Response received:")
-            api_logger.info(consolidated_feedback)
-
-        api_logger.info("=== END OF CONSOLIDATED FEEDBACK GENERATION ===\n")
-
-        # Save or update feedback
+        # Save the consolidated feedback
         saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
         if saved_feedback:
             saved_feedback.additional_feedback = additional_feedback
             saved_feedback.consolidated_feedback = consolidated_feedback
             saved_feedback.updated_at = datetime.now()
-            # Preserve the existing mark if there is one
         else:
             saved_feedback = SavedFeedback(
                 paper_id=paper.id,
                 additional_feedback=additional_feedback,
-                consolidated_feedback=consolidated_feedback,
-                mark=mark if mark is not None else None  # Include mark if provided
+                consolidated_feedback=consolidated_feedback
             )
             db.session.add(saved_feedback)
         
         db.session.commit()
+        
         return jsonify({"consolidated_feedback": consolidated_feedback})
-
+        
     except Exception as e:
-        api_logger.error(f"Error in generate_consolidated_feedback: {str(e)}")
-        api_logger.error("Full traceback:", exc_info=True)
-        raise
-    finally:
-        api_logger.info("=== EXITING generate_consolidated_feedback ROUTE ===")
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/save_additional_feedback/<file_hash>', methods=['POST'])
 @login_required
@@ -1121,12 +997,12 @@ def polish_feedback(file_hash):
         # Add detailed instructions with subsections
         prompt.add_section("detailed_instructions", "", subsections={
             "goal": ("Make the feedback more cohesive, professional, and well-structured while "
-                    "preserving all the key points and maintaining the academic tone."),
+                    "preserving the language and tone of the core feedback."),
             "requirements": """
-                1. Improves flow and transitions between sections
-                2. Enhances clarity and precision of language
-                3. Maintains consistent tone throughout
-                4. Preserves all specific feedback points""",
+                1. Maintain, word-for-word, the core feedback provided by the grader. This section is indicated by the <core_feedback> and </core_feedback> tags.
+                2. Selectively add feedback from the additional feedback section, indicated by the <additional_feedback> and </additional_feedback> tags.
+                3. In consolidating these sections, adjust the additional feedback to match the tone, style, and presentation of the core feedback.
+                4. Do not repeat points already covered in the core feedback.""",
             "formatting": "Format the response in Markdown with appropriate headers and styling."
         })
 
