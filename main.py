@@ -31,6 +31,11 @@ from dataclasses import dataclass, field
 import csv
 from io import StringIO
 from io import BytesIO
+from services.llm_service import LLMService
+from models.database import (
+    db, User, Paper, Rubric, RubricCriteria, Evaluation, 
+    Chat, GradeDescriptors, SavedFeedback
+)
 
 @dataclass
 class StructuredPrompt:
@@ -87,73 +92,8 @@ login_manager.login_view = 'login'
 # Configure SQLAlchemy
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+db.init_app(app)  # Initialize db with app
 
-# Define models
-class User(UserMixin, db.Model):
-    __tablename__ = 'users'
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password = db.Column(db.String(120), nullable=False)
-    is_admin = db.Column(db.Boolean, nullable=False, default=False)
-
-class Paper(db.Model):
-    __tablename__ = 'papers'
-    id = db.Column(db.Integer, primary_key=True)
-    hash = db.Column(db.String(32), unique=True, nullable=False)
-    filename = db.Column(db.String(255), nullable=False)
-    full_text = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=func.now())
-    model = db.Column(db.String(50), nullable=False)
-    pdf_path = db.Column(db.String(255), nullable=False)
-    evaluations = db.relationship('Evaluation', backref='paper', lazy=True)
-    chats = db.relationship('Chat', backref='paper', lazy=True)
-
-class Rubric(db.Model):
-    __tablename__ = 'rubrics'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(255), nullable=False)
-    description = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=func.now())
-    criteria = db.relationship('RubricCriteria', backref='rubric', lazy=True)
-
-class RubricCriteria(db.Model):
-    __tablename__ = 'rubric_criteria'
-    id = db.Column(db.Integer, primary_key=True)
-    rubric_id = db.Column(db.Integer, db.ForeignKey('rubrics.id'), nullable=False)
-    section_name = db.Column(db.String(255), nullable=False)
-    criteria_text = db.Column(db.Text, nullable=False)
-
-class Evaluation(db.Model):
-    __tablename__ = 'evaluations'
-    id = db.Column(db.Integer, primary_key=True)
-    paper_id = db.Column(db.Integer, db.ForeignKey('papers.id'), nullable=False)
-    criteria_id = db.Column(db.Integer, db.ForeignKey('rubric_criteria.id'))
-    evaluation_text = db.Column(db.Text, nullable=False)
-
-class Chat(db.Model):
-    __tablename__ = 'chats'
-    id = db.Column(db.Integer, primary_key=True)
-    paper_id = db.Column(db.Integer, db.ForeignKey('papers.id'), nullable=False)
-    user_message = db.Column(db.Text, nullable=False)
-    ai_response = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=func.now())
-
-class GradeDescriptors(db.Model):
-    __tablename__ = 'grade_descriptors'
-    id = db.Column(db.Integer, primary_key=True)
-    range_start = db.Column(db.Integer, nullable=False)
-    range_end = db.Column(db.Integer, nullable=False)
-    descriptor_text = db.Column(db.Text, nullable=False)
-
-class SavedFeedback(db.Model):
-    __tablename__ = 'saved_feedback'
-    id = db.Column(db.Integer, primary_key=True)
-    paper_id = db.Column(db.Integer, db.ForeignKey('papers.id'), nullable=False)
-    additional_feedback = db.Column(db.Text)
-    consolidated_feedback = db.Column(db.Text)
-    mark = db.Column(db.Float)
-    updated_at = db.Column(db.DateTime, nullable=False, default=func.now())
 
 def create_admin_user(username="admin", password="admin"):
     with app.app_context():
@@ -363,21 +303,28 @@ def paper(file_hash):
                          upload_time=upload_time.isoformat(),
                          average_time=average_time)
 
+# Initialize the service with API clients
+llm_service = LLMService(
+    openai_client=client_openai,
+    anthropic_client=client_anthropic
+)
+
+# Example of refactored chat route
 @app.route('/chat/<file_hash>', methods=['POST'])
 @login_required
 def chat(file_hash):
     data = request.json
     user_message = data['message']
     model = data['model']
-
+    
     paper = Paper.query.filter_by(hash=file_hash).first_or_404()
     chat_history = Chat.query.filter_by(paper_id=paper.id).order_by(Chat.created_at).all()
     
-    # Get grade descriptors
-    grade_descriptors = GradeDescriptors.query.order_by(GradeDescriptors.range_start.desc()).all()
+    # Get grade descriptors from database
+    descriptors = GradeDescriptors.query.order_by(GradeDescriptors.range_start.desc()).all()
     descriptors_text = "\n".join([
-        f"- {d.range_start}-{d.range_end}%: {d.descriptor_text}"
-        for d in grade_descriptors
+        f"{d.range_start}-{d.range_end}%: {d.descriptor_text}"
+        for d in descriptors
     ])
     
     # Create initial context prompt using StructuredPrompt
@@ -389,7 +336,8 @@ def chat(file_hash):
     prompt.add_section("essay_content", paper.full_text)
     
     prompt.add_section("grading_framework", 
-        "Here is how essays are evaluated at different grade levels:\n" + descriptors_text)
+        "Here is how essays are evaluated at different grade levels:\n" + 
+        (descriptors_text if descriptors_text else "No grade descriptors available."))
     
     prompt.add_section("instructions", 
         "Please keep this essay and grading framework in mind during our conversation. "
@@ -397,58 +345,40 @@ def chat(file_hash):
         "grading criteria and reference specific parts of the text when relevant.")
 
     initial_context = prompt.build()
-    system_msg = "You are an expert in academic writing assessment. Please provide detailed, constructive responses that help users understand and improve their essays."
-
-    # Build messages array with history
-    messages = []
-    if model.startswith('claude'):
-        messages = [{
-            "role": "user",
-            "content": initial_context
-        }]
-        # Add chat history
-        for chat in chat_history:
-            messages.append({"role": "user", "content": chat.user_message})
-            messages.append({"role": "assistant", "content": chat.ai_response})
-        # Add current message
-        messages.append({"role": "user", "content": user_message})
-        
-        response = client_anthropic.messages.create(
+    system_msg = "You are an expert in academic writing assessment..."
+    
+    # Build messages array
+    messages = [{"role": "user", "content": initial_context}]
+    
+    # Add chat history
+    for chat in chat_history:
+        messages.append({"role": "user", "content": chat.user_message})
+        messages.append({"role": "assistant", "content": chat.ai_response})
+    
+    # Add current message
+    messages.append({"role": "user", "content": user_message})
+    
+    try:
+        ai_message = llm_service.generate_response(
             model=model,
-            system=system_msg,
             messages=messages,
-            max_tokens=1000
+            system_msg=system_msg
         )
-        ai_message = response.content[0].text.strip()
-    else:
-        messages = [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": initial_context},
-            {"role": "assistant", "content": "I understand. I'll keep the essay content and grading criteria in mind during our conversation. What would you like to discuss about it?"}
-        ]
-        # Add chat history
-        for chat in chat_history:
-            messages.append({"role": "user", "content": chat.user_message})
-            messages.append({"role": "assistant", "content": chat.ai_response})
-        # Add current message
-        messages.append({"role": "user", "content": user_message})
         
-        response = client_openai.chat.completions.create(
-            model=model,
-            messages=messages
+        # Save chat message
+        new_chat = Chat(
+            paper_id=paper.id,
+            user_message=user_message,
+            ai_response=ai_message
         )
-        ai_message = response.choices[0].message.content.strip()
-
-    # Save chat message
-    new_chat = Chat(
-        paper_id=paper.id,
-        user_message=user_message,
-        ai_response=ai_message
-    )
-    db.session.add(new_chat)
-    db.session.commit()
-
-    return jsonify({"response": ai_message})
+        db.session.add(new_chat)
+        db.session.commit()
+        
+        return jsonify({"response": ai_message})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/clear_chat/<file_hash>', methods=['POST'])
 @login_required
@@ -1114,31 +1044,21 @@ def moderate_feedback(file_hash):
             api_logger.info(f"Moderation prompt for {criteria.section_name}:")
             api_logger.info(final_prompt)
 
-            # Generate moderated feedback using the appropriate API
-            if model.startswith('claude'):
-                response = client_anthropic.messages.create(
+            try:
+                moderated_text = llm_service.generate_response(
                     model=model,
-                    system="You are an expert academic skilled in assessing student work. Format all responses in Markdown.",
                     messages=[{"role": "user", "content": final_prompt}],
-                    max_tokens=1000
+                    system_msg="You are an expert academic writing moderator..."
                 )
-                moderated_text = response.content[0].text.strip()
-            else:
-                response = client_openai.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {"role": "system", "content": "You are an expert academic writing moderator. Format all responses in Markdown."},
-                        {"role": "user", "content": final_prompt}
-                    ]
-                )
-                moderated_text = response.choices[0].message.content.strip()
-            
-            # Store the moderated feedback
-            moderated_feedback[evaluation.id] = moderated_text
-            
-            # Update the evaluation in the database
-            evaluation.evaluation_text = moderated_text
-            db.session.add(evaluation)
+                
+                # Store the moderated feedback
+                moderated_feedback[evaluation.id] = moderated_text
+                evaluation.evaluation_text = moderated_text
+                db.session.add(evaluation)
+                
+            except Exception as e:
+                api_logger.error(f"Error moderating feedback for evaluation {evaluation.id}: {str(e)}")
+                moderated_feedback[evaluation.id] = f"Error: {str(e)}"
         
         db.session.commit()
         
@@ -1147,7 +1067,6 @@ def moderate_feedback(file_hash):
     except Exception as e:
         db.session.rollback()
         api_logger.error(f"Error in moderate_feedback: {str(e)}")
-        api_logger.error("Full traceback:", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 @app.route('/export_feedback/<file_hash>')
