@@ -37,6 +37,7 @@ from models.database import (
     Chat, GradeDescriptors, SavedFeedback
 )
 from utils.prompt_builder import StructuredPrompt
+from utils.prompt_loader import PromptLoader
 
 def adapt_datetime(ts):
     return ts.isoformat()
@@ -66,6 +67,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)  # Initialize db with app
 
+# Initialize prompt loader
+prompt_loader = PromptLoader()
 
 def create_admin_user(username="admin", password="admin"):
     with app.app_context():
@@ -297,27 +300,16 @@ def chat(file_hash):
     descriptors_text = "\n".join([
         f"{d.range_start}-{d.range_end}%: {d.descriptor_text}"
         for d in descriptors
-    ])
+    ]) if descriptors else "No grade descriptors available."
     
-    # Create initial context prompt using StructuredPrompt
-    prompt = StructuredPrompt()
-    prompt.add_section("context", 
-        "You are an AI assistant specialized in discussing academic essays. "
-        "You have access to both the full essay text and the grading criteria.")
+    prompt = prompt_loader.create_prompt(
+        'chat_prompt',
+        essay_content=paper.full_text,
+        descriptors_text=descriptors_text
+    )
     
-    prompt.add_section("essay_content", paper.full_text)
-    
-    prompt.add_section("grading_framework", 
-        "Here is how essays are evaluated at different grade levels:\n" + 
-        (descriptors_text if descriptors_text else "No grade descriptors available."))
-    
-    prompt.add_section("instructions", 
-        "Please keep this essay and grading framework in mind during our conversation. "
-        "When discussing the essay's quality or suggesting improvements, consider these "
-        "grading criteria and reference specific parts of the text when relevant.")
-
     initial_context = prompt.build()
-    system_msg = "You are an expert in academic writing assessment..."
+    system_msg = "You are an academic with expertise in the subject matter of the essay below."
     
     # Build messages array
     messages = [{"role": "user", "content": initial_context}]
@@ -418,35 +410,15 @@ def save_rubric():
 def generate_evaluation(text, section_name, criteria_text, model):
     """Generate an evaluation for a section of text using the specified AI model."""
     
-    # Create prompt using StructuredPrompt class
-    prompt = StructuredPrompt()
+    prompt = prompt_loader.create_prompt(
+        'evaluation_prompt',
+        essay_to_evaluate=text,
+        section_focus=section_name,
+        evaluation_criteria=criteria_text
+    )
     
-    # Add initial task summary
-    prompt.add_section("initial_task_summary", 
-        "You are evaluating a section of an academic essay according to specific criteria.")
-    
-    # Add essay text
-    prompt.add_section("essay_to_evaluate", text)
-    
-    # Add detailed instructions with subsections
-    prompt.add_section("detailed_instructions", "", subsections={
-        "section_focus": section_name,
-        "evaluation_criteria": criteria_text,
-        "formatting_requirements": """Format your response in Markdown, using:
-- Headers (##) for main sections
-- Lists (- or *) for key points
-- Bold (**) for emphasis on important elements
-- Line breaks between paragraphs"""
-    })
-    
-    # Add specific analysis request
-    prompt.add_section("analysis_request", 
-        "Please provide an evaluation that begins with your categorization of the essay "
-        "(e.g. Fail, Satisfactory, Good, Very Good, Excellent), followed by your "
-        "justification for that categorization, and then relevant feedback for the student.")
-
     final_prompt = prompt.build()
-    system_msg = "You are an experienced essay evaluator who provides constructive feedback to postgraduate students. Please format all of your responses as valid Markdown."
+    system_msg = "You are an expert academic who provides constructive feedback on student essays. Please format all of your responses as valid Markdown."
 
     api_logger.info(f"Sending prompt for {section_name} to API:")
     api_logger.info(f"System Message: {system_msg}")
@@ -874,74 +846,38 @@ def save_consolidated_feedback(file_hash):
 @app.route('/polish_feedback/<file_hash>', methods=['POST'])
 @login_required
 def polish_feedback(file_hash):
-    try:
-        data = request.json
-        model = data['model']
-        
-        # Get the saved feedback
-        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
-        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
-        
-        if not saved_feedback or not saved_feedback.consolidated_feedback:
-            return jsonify({"error": "No feedback found to polish"}), 400
-
-        # Create prompt using StructuredPrompt class
-        prompt = StructuredPrompt()
-        
-        # Add task description
-        prompt.add_section("task_description", 
-            "Polish and enhance the following feedback statement by converting it from "
-            "bullet points into prose.")
-        
-        # Add the feedback content
-        prompt.add_section("feedback_to_polish", saved_feedback.consolidated_feedback)
-        
-        # Add detailed instructions with subsections
-        prompt.add_section("detailed_instructions", "", subsections={
-            "goal": ("Make the feedback more cohesive, professional, and well-structured while "
-                    "preserving the language and tone of the core feedback."),
-            "requirements": """
-                1. Maintain, word-for-word, the core feedback provided by the grader. This section is indicated by the <core_feedback> and </core_feedback> tags.
-                2. Selectively add feedback from the additional feedback section, indicated by the <additional_feedback> and </additional_feedback> tags.
-                3. In consolidating these sections, adjust the additional feedback to match the tone, style, and presentation of the core feedback.
-                4. Do not repeat points already covered in the core feedback.""",
-            "formatting": "Format the response in Markdown with appropriate headers and styling."
-        })
-
-        final_prompt = prompt.build()
-        system_msg = ("You are an experienced academic writing specialist who excels at "
-                     "polishing feedback while maintaining its substance. Format all "
-                     "responses in Markdown.")
-
-        api_logger.info("\n=== POLISHING FEEDBACK ===")
-        api_logger.info(f"Model: {model}")
-        api_logger.debug(f"Prompt:\n{final_prompt}")
-        api_logger.debug(f"System message: {system_msg}")
-
-        if model.startswith('claude'):
-            response = client_anthropic.messages.create(
-                model=model,
-                system=system_msg,
-                messages=[{"role": "user", "content": final_prompt}],
-                max_tokens=1000
-            )
-            polished_feedback = response.content[0].text.strip()
-            api_logger.debug(f"Response: {polished_feedback}")
-        else:
-            response = client_openai.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": final_prompt}
-                ]
-            )
-            polished_feedback = response.choices[0].message.content.strip()
-            api_logger.debug(f"Response: {polished_feedback}")
-
-        return jsonify({"polished_feedback": polished_feedback})
+    data = request.json
+    model = data['model']
     
+    paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+    saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+    
+    if not saved_feedback or not saved_feedback.consolidated_feedback:
+        return jsonify({"error": "No feedback found to polish"}), 400
+
+    # Use prompt loader to create the prompt
+    prompt, system_msg = prompt_loader.create_prompt(
+        'polish_feedback_prompt',
+        feedback_to_polish=saved_feedback.consolidated_feedback
+    )
+
+    final_prompt = prompt.build()
+
+    api_logger.info("\n=== POLISHING FEEDBACK ===")
+    api_logger.info(f"Model: {model}")
+    api_logger.debug(f"Prompt:\n{final_prompt}")
+    api_logger.debug(f"System message: {system_msg}")
+
+    try:
+        polished_feedback = llm_service.generate_response(
+            model=model,
+            messages=[{"role": "user", "content": final_prompt}],
+            system_msg=system_msg
+        )
+        return jsonify({"polished_feedback": polished_feedback})
+        
     except Exception as e:
-        print(f"Error polishing feedback: {str(e)}")
+        api_logger.error(f"Error polishing feedback: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/moderate_feedback/<file_hash>', methods=['POST'])
@@ -970,45 +906,15 @@ def moderate_feedback(file_hash):
         for evaluation in evaluations:
             criteria = RubricCriteria.query.get(evaluation.criteria_id)
             
-            # Create prompt using StructuredPrompt class
-            prompt = StructuredPrompt()
-            
-            # Add context sections
-            prompt.add_section("task_description", 
-                "Your task is to evaluate the scope and fairness of the existing feedback of this essay, identifying strengths and weaknesses "
-                "that weren't spotted by the original grader. Below you will find the essay text, the core feedback provided by the grader, and the evaluation criteria you should use to evaluate the essay.")
-            
-            prompt.add_section("essay_text", paper.full_text)
-            
-            prompt.add_section("core_feedback", core_feedback)
-            
-            # Add the proposed mark section
-            if proposed_mark is not None:
-                prompt.add_section("proposed_mark", 
-                    f"The grader's proposed mark for this essay is: {proposed_mark}%")
-            
-            # Add criteria-specific instructions
-            prompt.add_section("criteria_focus", "", subsections={
-                "section": criteria.section_name,
-                "criteria": criteria.criteria_text,
-                "requirements": """
-                    1. Focus on finding both strengths and weaknesses NOT mentioned in the core feedback, and assessing whether the existing feedback is a fair and accurate assessment of the essay.
-                    2. Cite specific examples from the text where possible.
-                    3. Avoid repeating points already covered.
-                    4. Pay special attention to aspects specific to this marking criterion given above.
-                    5. If the core feedback adequately covers this criterion, acknowledge this.
-                    6. Finally, provide a brief overall evaluation of the essay, including whether the proposed mark seems appropriate according to the evaluation criteria supplied.
-                    """
-            })
-            
-            # Add output format instructions
-            prompt.add_section("format_requirements", """
-                Format your response in Markdown:
-                1. Start with a brief acknowledgment of what the core feedback covered well
-                2. Use bullet points for new issues identified
-                3. Use bold for key terms or concepts
-                4. Include specific examples from the text where possible
-                """)
+            # Use prompt loader to create the prompt
+            prompt = prompt_loader.create_prompt(
+                'moderate_feedback_prompt',
+                essay_text=paper.full_text,
+                core_feedback=core_feedback,
+                mark=str(proposed_mark) if proposed_mark is not None else "not provided",
+                section=criteria.section_name,
+                criteria=criteria.criteria_text
+            )
 
             final_prompt = prompt.build()
             
@@ -1020,7 +926,7 @@ def moderate_feedback(file_hash):
                 moderated_text = llm_service.generate_response(
                     model=model,
                     messages=[{"role": "user", "content": final_prompt}],
-                    system_msg="You are an expert academic writing moderator..."
+                    system_msg="You are an expert academic who has been tasked with moderating a colleague's mark and feedback on a student essay. Format all responses in Markdown."
                 )
                 
                 # Store the moderated feedback
@@ -1033,7 +939,6 @@ def moderate_feedback(file_hash):
                 moderated_feedback[evaluation.id] = f"Error: {str(e)}"
         
         db.session.commit()
-        
         return jsonify({"moderated_feedback": moderated_feedback})
         
     except Exception as e:
