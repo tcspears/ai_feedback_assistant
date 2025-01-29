@@ -36,8 +36,6 @@ from models.database import (
     db, User, Paper, Rubric, RubricCriteria, Evaluation, 
     Chat, GradeDescriptors, SavedFeedback
 )
-        self.sections[name] = content
-        # Add to section_order if not already present
 from utils.prompt_builder import StructuredPrompt
 
 def adapt_datetime(ts):
