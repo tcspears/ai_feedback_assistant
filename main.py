@@ -302,14 +302,14 @@ def chat(file_hash):
         for d in descriptors
     ]) if descriptors else "No grade descriptors available."
     
-    prompt = prompt_loader.create_prompt(
+    # Get both prompt and system message
+    prompt, system_msg = prompt_loader.create_prompt(
         'chat_prompt',
         essay_content=paper.full_text,
         descriptors_text=descriptors_text
     )
     
     initial_context = prompt.build()
-    system_msg = "You are an academic with expertise in the subject matter of the essay below."
     
     # Build messages array
     messages = [{"role": "user", "content": initial_context}]
@@ -342,6 +342,7 @@ def chat(file_hash):
         
     except Exception as e:
         db.session.rollback()
+        api_logger.error(f"Error in chat: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/clear_chat/<file_hash>', methods=['POST'])
@@ -406,51 +407,6 @@ def save_rubric():
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)})
 
-
-def generate_evaluation(text, section_name, criteria_text, model):
-    """Generate an evaluation for a section of text using the specified AI model."""
-    
-    prompt = prompt_loader.create_prompt(
-        'evaluation_prompt',
-        essay_to_evaluate=text,
-        section_focus=section_name,
-        evaluation_criteria=criteria_text
-    )
-    
-    final_prompt = prompt.build()
-    system_msg = "You are an expert academic who provides constructive feedback on student essays. Please format all of your responses as valid Markdown."
-
-    api_logger.info(f"Sending prompt for {section_name} to API:")
-    api_logger.info(f"System Message: {system_msg}")
-    api_logger.info(f"Prompt:\n{final_prompt}\n{'='*50}")
-    
-    try:
-        if model.startswith('claude'):
-            response = client_anthropic.messages.create(
-                model=model,
-                system=system_msg,
-                messages=[{"role": "user", "content": final_prompt}],
-                max_tokens=1000
-            )
-            evaluation = response.content[0].text.strip()
-            api_logger.info(f"Claude API Response for {section_name}:\n{evaluation}\n{'='*50}")
-        else:
-            response = client_openai.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": final_prompt}
-                ]
-            )
-            evaluation = response.choices[0].message.content.strip()
-            api_logger.info(f"OpenAI API Response for {section_name}:\n{evaluation}\n{'='*50}")
-        
-        evaluation = re.sub(r'<[^>]+>', '', evaluation)
-        return evaluation
-    
-    except Exception as e:
-        print(f"Error generating evaluation: {str(e)}")
-        return f"Error generating evaluation for {section_name}: {str(e)}"
 
 @app.route('/get_rubric/<int:rubric_id>')
 @login_required
@@ -883,68 +839,62 @@ def polish_feedback(file_hash):
 @app.route('/moderate_feedback/<file_hash>', methods=['POST'])
 @login_required
 def moderate_feedback(file_hash):
-    try:
-        data = request.json
-        core_feedback = data['core_feedback']
-        model = data['model']
+    data = request.json
+    core_feedback = data['core_feedback']
+    model = data['model']
+    
+    paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+    
+    # Get the saved feedback to access the numerical mark
+    saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+    proposed_mark = saved_feedback.mark if saved_feedback else None
+    
+    # Get all criteria evaluations for this paper
+    evaluations = (Evaluation.query
+                  .join(RubricCriteria)
+                  .filter(Evaluation.paper_id == paper.id)
+                  .filter(RubricCriteria.section_name != '_summary')
+                  .all())
+    
+    moderated_feedback = {}
+    
+    for evaluation in evaluations:
+        criteria = RubricCriteria.query.get(evaluation.criteria_id)
         
-        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        # Use prompt loader to create the prompt and get system message
+        prompt, system_msg = prompt_loader.create_prompt(
+            'moderate_feedback_prompt',
+            essay_text=paper.full_text,
+            core_feedback=core_feedback,
+            mark=str(proposed_mark) if proposed_mark is not None else "not provided",
+            section=criteria.section_name,
+            criteria=criteria.criteria_text
+        )
+
+        final_prompt = prompt.build()  # Now build() is called on the prompt object, not the tuple
         
-        # Get the saved feedback to access the numerical mark
-        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
-        proposed_mark = saved_feedback.mark if saved_feedback else None
-        
-        # Get all criteria evaluations for this paper
-        evaluations = (Evaluation.query
-                      .join(RubricCriteria)
-                      .filter(Evaluation.paper_id == paper.id)
-                      .filter(RubricCriteria.section_name != '_summary')
-                      .all())
-        
-        moderated_feedback = {}
-        
-        for evaluation in evaluations:
-            criteria = RubricCriteria.query.get(evaluation.criteria_id)
-            
-            # Use prompt loader to create the prompt
-            prompt = prompt_loader.create_prompt(
-                'moderate_feedback_prompt',
-                essay_text=paper.full_text,
-                core_feedback=core_feedback,
-                mark=str(proposed_mark) if proposed_mark is not None else "not provided",
-                section=criteria.section_name,
-                criteria=criteria.criteria_text
+        # Log the prompt for debugging
+        api_logger.info(f"Moderation prompt for {criteria.section_name}:")
+        api_logger.info(final_prompt)
+
+        try:
+            moderated_text = llm_service.generate_response(
+                model=model,
+                messages=[{"role": "user", "content": final_prompt}],
+                system_msg=system_msg
             )
-
-            final_prompt = prompt.build()
             
-            # Log the prompt for debugging
-            api_logger.info(f"Moderation prompt for {criteria.section_name}:")
-            api_logger.info(final_prompt)
-
-            try:
-                moderated_text = llm_service.generate_response(
-                    model=model,
-                    messages=[{"role": "user", "content": final_prompt}],
-                    system_msg="You are an expert academic who has been tasked with moderating a colleague's mark and feedback on a student essay. Format all responses in Markdown."
-                )
-                
-                # Store the moderated feedback
-                moderated_feedback[evaluation.id] = moderated_text
-                evaluation.evaluation_text = moderated_text
-                db.session.add(evaluation)
-                
-            except Exception as e:
-                api_logger.error(f"Error moderating feedback for evaluation {evaluation.id}: {str(e)}")
-                moderated_feedback[evaluation.id] = f"Error: {str(e)}"
-        
-        db.session.commit()
-        return jsonify({"moderated_feedback": moderated_feedback})
-        
-    except Exception as e:
-        db.session.rollback()
-        api_logger.error(f"Error in moderate_feedback: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+            # Store the moderated feedback
+            moderated_feedback[evaluation.id] = moderated_text
+            evaluation.evaluation_text = moderated_text
+            db.session.add(evaluation)
+            
+        except Exception as e:
+            api_logger.error(f"Error moderating feedback for evaluation {evaluation.id}: {str(e)}")
+            moderated_feedback[evaluation.id] = f"Error: {str(e)}"
+    
+    db.session.commit()
+    return jsonify({"moderated_feedback": moderated_feedback})
 
 @app.route('/export_feedback/<file_hash>')
 @login_required
@@ -1054,6 +1004,56 @@ def get_average_time(file_hash):
         average_time = None
         
     return jsonify({"average_time": average_time})
+
+@app.route('/list_papers')
+@login_required
+def list_papers():
+    # Query to get all papers with their rubric names and marks
+    papers = (db.session.query(
+        Paper,
+        Rubric.name.label('rubric_name'),
+        SavedFeedback.mark
+    )
+    .outerjoin(Evaluation, Paper.id == Evaluation.paper_id)
+    .outerjoin(RubricCriteria, Evaluation.criteria_id == RubricCriteria.id)
+    .outerjoin(Rubric, RubricCriteria.rubric_id == Rubric.id)
+    .outerjoin(SavedFeedback, Paper.id == SavedFeedback.paper_id)
+    .group_by(Paper.id)
+    .all())
+    
+    # Format the results for the template
+    formatted_papers = [{
+        'hash': paper.Paper.hash,
+        'filename': paper.Paper.filename,
+        'rubric_name': paper.rubric_name or 'No rubric',
+        'mark': paper.mark
+    } for paper in papers]
+    
+    return render_template('list_papers.html', papers=formatted_papers)
+
+@app.route('/delete_paper/<file_hash>', methods=['POST'])
+@login_required
+def delete_paper(file_hash):
+    try:
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Delete the PDF file
+        if os.path.exists(paper.pdf_path):
+            os.remove(paper.pdf_path)
+        
+        # Delete related records
+        Chat.query.filter_by(paper_id=paper.id).delete()
+        Evaluation.query.filter_by(paper_id=paper.id).delete()
+        SavedFeedback.query.filter_by(paper_id=paper.id).delete()
+        
+        # Delete the paper record
+        db.session.delete(paper)
+        db.session.commit()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")

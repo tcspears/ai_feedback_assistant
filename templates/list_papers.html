@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Papers - Essay Feedback Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1><a href="{{ url_for('index') }}">Essay Feedback Assistant</a></h1>
+        
+        <div class="navigation-links">
+            <a href="{{ url_for('index') }}">Home</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
+            {% if current_user.is_admin %}
+                <a href="{{ url_for('admin') }}">Admin Panel</a>
+            {% endif %}
+        </div>
+
+        <div class="papers-list-container">
+            <div class="search-sort-container">
+                <input type="text" id="searchInput" placeholder="Search papers..." onkeyup="filterPapers()">
+                <div class="sort-buttons">
+                    <button onclick="sortTable('name')">Sort by Name</button>
+                    <button onclick="sortTable('rubric')">Sort by Rubric</button>
+                </div>
+            </div>
+
+            <table id="papersTable">
+                <thead>
+                    <tr>
+                        <th>Paper Name</th>
+                        <th>Rubric</th>
+                        <th>Mark</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for paper in papers %}
+                    <tr>
+                        <td><a href="{{ url_for('paper', file_hash=paper.hash) }}">{{ paper.filename }}</a></td>
+                        <td>{{ paper.rubric_name }}</td>
+                        <td>{{ paper.mark if paper.mark is not none else 'Not marked' }}</td>
+                        <td>
+                            <button onclick="deletePaper('{{ paper.hash }}', '{{ paper.filename }}')" class="delete-btn">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        function filterPapers() {
+            const input = document.getElementById('searchInput');
+            const filter = input.value.toLowerCase();
+            const table = document.getElementById('papersTable');
+            const rows = table.getElementsByTagName('tr');
+
+            for (let i = 1; i < rows.length; i++) {
+                const nameCell = rows[i].getElementsByTagName('td')[0];
+                if (nameCell) {
+                    const text = nameCell.textContent || nameCell.innerText;
+                    rows[i].style.display = text.toLowerCase().includes(filter) ? '' : 'none';
+                }
+            }
+        }
+
+        function sortTable(column) {
+            const table = document.getElementById('papersTable');
+            const rows = Array.from(table.getElementsByTagName('tr')).slice(1);
+            const columnIndex = column === 'name' ? 0 : 1;
+
+            rows.sort((a, b) => {
+                const aText = a.getElementsByTagName('td')[columnIndex].textContent.toLowerCase();
+                const bText = b.getElementsByTagName('td')[columnIndex].textContent.toLowerCase();
+                return aText.localeCompare(bText);
+            });
+
+            const tbody = table.getElementsByTagName('tbody')[0];
+            tbody.innerHTML = '';
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
+        function deletePaper(hash, filename) {
+            if (confirm(`Are you sure you want to delete "${filename}"?`)) {
+                fetch(`/delete_paper/${hash}`, {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error deleting paper: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error deleting paper');
+                });
+            }
+        }
+    </script>
+</body>
+</html> 

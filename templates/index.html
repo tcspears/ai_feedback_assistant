@@ -27,10 +27,14 @@
             {% endif %}
         {% endwith %}
 
-        <a href="{{ url_for('logout') }}">Logout</a>
-        {% if current_user.is_admin %}
-            <a href="{{ url_for('admin') }}">Admin Panel</a>
-        {% endif %}
+        <!-- Add this section for navigation links -->
+        <div class="navigation-links">
+            <a href="{{ url_for('logout') }}">Logout</a>
+            <a href="{{ url_for('list_papers') }}">All Papers</a>
+            {% if current_user.is_admin %}
+                <a href="{{ url_for('admin') }}">Admin Panel</a>
+            {% endif %}
+        </div>
 
         <!-- Rubric Section -->
         <div class="rubric-section">
