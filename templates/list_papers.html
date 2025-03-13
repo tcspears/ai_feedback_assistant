@@ -23,27 +23,33 @@
         <div class="papers-list-container">
             <div class="search-sort-container">
                 <input type="text" id="searchInput" placeholder="Search papers..." onkeyup="filterPapers()">
-                <div class="sort-buttons">
-                    <button onclick="sortTable('name')">Sort by Name</button>
-                    <button onclick="sortTable('rubric')">Sort by Rubric</button>
-                </div>
+                <select id="rubricFilter" onchange="filterByRubric()">
+                    <option value="all">All Rubrics</option>
+                    {% set rubrics = [] %}
+                    {% for paper in papers %}
+                        {% if paper.rubric_name not in rubrics %}
+                            {% set _ = rubrics.append(paper.rubric_name) %}
+                            <option value="{{ paper.rubric_name }}">{{ paper.rubric_name }}</option>
+                        {% endif %}
+                    {% endfor %}
+                </select>
             </div>
 
             <table id="papersTable">
                 <thead>
                     <tr>
-                        <th>Paper Name</th>
-                        <th>Rubric</th>
-                        <th>Mark</th>
+                        <th class="sortable" data-column="name">Paper Name <span class="sort-icon"></span></th>
+                        <th class="sortable" data-column="rubric">Rubric <span class="sort-icon"></span></th>
+                        <th class="sortable" data-column="mark">Mark <span class="sort-icon"></span></th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for paper in papers %}
-                    <tr>
+                    <tr data-rubric="{{ paper.rubric_name }}">
                         <td><a href="{{ url_for('paper', file_hash=paper.hash) }}">{{ paper.filename }}</a></td>
                         <td>{{ paper.rubric_name }}</td>
-                        <td>{{ paper.mark if paper.mark is not none else 'Not marked' }}</td>
+                        <td data-mark="{{ paper.mark if paper.mark is not none else -1 }}">{{ paper.mark if paper.mark is not none else 'Not marked' }}</td>
                         <td>
                             <button onclick="deletePaper('{{ paper.hash }}', '{{ paper.filename }}')" class="delete-btn">
                                 Delete
@@ -57,35 +63,104 @@
     </div>
 
     <script>
+        // Track current sort state
+        let currentSort = {
+            column: null,
+            ascending: true
+        };
+
+        // Add click event listeners to sortable column headers
+        document.addEventListener('DOMContentLoaded', function() {
+            const sortableHeaders = document.querySelectorAll('th.sortable');
+            sortableHeaders.forEach(header => {
+                header.addEventListener('click', function() {
+                    const column = this.getAttribute('data-column');
+                    
+                    // Toggle sort direction if clicking the same column
+                    if (currentSort.column === column) {
+                        currentSort.ascending = !currentSort.ascending;
+                    } else {
+                        currentSort.column = column;
+                        currentSort.ascending = true;
+                    }
+                    
+                    // Update sort icons
+                    updateSortIcons();
+                    
+                    // Sort the table
+                    sortTable(column, currentSort.ascending);
+                });
+            });
+        });
+
+        function updateSortIcons() {
+            // Clear all icons first
+            document.querySelectorAll('.sort-icon').forEach(icon => {
+                icon.innerHTML = '';
+            });
+            
+            // Set the icon for the current sort column
+            if (currentSort.column) {
+                const currentHeader = document.querySelector(`th[data-column="${currentSort.column}"]`);
+                const icon = currentHeader.querySelector('.sort-icon');
+                icon.innerHTML = currentSort.ascending ? ' ▲' : ' ▼';
+            }
+        }
+
+        function sortTable(column, ascending) {
+            const table = document.getElementById('papersTable');
+            const rows = Array.from(table.querySelectorAll('tbody tr'));
+            
+            rows.sort((a, b) => {
+                let aValue, bValue;
+                
+                if (column === 'name') {
+                    aValue = a.cells[0].textContent.toLowerCase();
+                    bValue = b.cells[0].textContent.toLowerCase();
+                } else if (column === 'rubric') {
+                    aValue = a.cells[1].textContent.toLowerCase();
+                    bValue = b.cells[1].textContent.toLowerCase();
+                } else if (column === 'mark') {
+                    // Use the data-mark attribute for numerical sorting
+                    aValue = parseInt(a.cells[2].getAttribute('data-mark'));
+                    bValue = parseInt(b.cells[2].getAttribute('data-mark'));
+                }
+                
+                // Compare the values
+                if (aValue < bValue) return ascending ? -1 : 1;
+                if (aValue > bValue) return ascending ? 1 : -1;
+                return 0;
+            });
+            
+            // Reorder the rows in the table
+            const tbody = table.querySelector('tbody');
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
         function filterPapers() {
             const input = document.getElementById('searchInput');
             const filter = input.value.toLowerCase();
+            const rubricFilter = document.getElementById('rubricFilter').value;
             const table = document.getElementById('papersTable');
             const rows = table.getElementsByTagName('tr');
 
             for (let i = 1; i < rows.length; i++) {
                 const nameCell = rows[i].getElementsByTagName('td')[0];
+                const rubricValue = rows[i].getAttribute('data-rubric');
+                
                 if (nameCell) {
                     const text = nameCell.textContent || nameCell.innerText;
-                    rows[i].style.display = text.toLowerCase().includes(filter) ? '' : 'none';
+                    const matchesSearch = text.toLowerCase().includes(filter);
+                    const matchesRubric = (rubricFilter === 'all' || rubricValue === rubricFilter);
+                    
+                    rows[i].style.display = (matchesSearch && matchesRubric) ? '' : 'none';
                 }
             }
         }
 
-        function sortTable(column) {
-            const table = document.getElementById('papersTable');
-            const rows = Array.from(table.getElementsByTagName('tr')).slice(1);
-            const columnIndex = column === 'name' ? 0 : 1;
-
-            rows.sort((a, b) => {
-                const aText = a.getElementsByTagName('td')[columnIndex].textContent.toLowerCase();
-                const bText = b.getElementsByTagName('td')[columnIndex].textContent.toLowerCase();
-                return aText.localeCompare(bText);
-            });
-
-            const tbody = table.getElementsByTagName('tbody')[0];
-            tbody.innerHTML = '';
-            rows.forEach(row => tbody.appendChild(row));
+        function filterByRubric() {
+            // This will trigger the combined filter
+            filterPapers();
         }
 
         function deletePaper(hash, filename) {

@@ -727,6 +727,22 @@ th {
     color: white;
 }
 
+th.sortable {
+    cursor: pointer;
+    position: relative;
+    user-select: none;
+}
+
+th.sortable:hover {
+    background: var(--hover-color);
+}
+
+.sort-icon {
+    display: inline-block;
+    width: 10px;
+    margin-left: 5px;
+}
+
 tr:hover {
     background: var(--summary-bg);
 }
@@ -891,11 +907,25 @@ label[for="is_admin"] {
     display: flex;
     justify-content: space-between;
     margin-bottom: 20px;
+    align-items: center;
+    gap: 15px;
 }
 
 #searchInput {
     padding: 8px;
-    width: 300px;
+    flex: 1;
+    max-width: 300px;
+    background: var(--summary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    font-size: 14px;
+}
+
+#rubricFilter {
+    padding: 8px;
+    flex: 1;
+    max-width: 300px;
     background: var(--summary-bg);
     border: 1px solid var(--border-color);
     border-radius: 4px;
