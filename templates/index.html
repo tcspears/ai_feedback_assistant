@@ -57,6 +57,57 @@
                 <button type="button" id="saveRubric" onclick="saveRubric()">Save Rubric</button>
             </div>
 
+            <!-- Feedback Macros Section -->
+            <div class="macros-section">
+                <h3>Feedback Macros</h3>
+                <p class="section-description">Create reusable feedback snippets to speed up the marking process.</p>
+                
+                <div id="macrosContainer">
+                    <!-- Macros will be loaded here when a rubric is selected -->
+                    <div class="no-macros-message">Select a rubric to manage its feedback macros</div>
+                </div>
+                
+                <div class="macro-form" style="display: none;">
+                    <h4>Add New Macro</h4>
+                    <div class="macro-form-fields">
+                        <div class="form-row">
+                            <input type="text" id="macroName" placeholder="Short name (e.g., 'poor thesis')" required>
+                            <select id="macroCategory">
+                                <option value="general">General</option>
+                                <option value="structure">Structure</option>
+                                <option value="content">Content</option>
+                                <option value="language">Language</option>
+                                <option value="critical">Critical Analysis</option>
+                                <option value="sources">Sources/References</option>
+                                <option value="custom">Custom...</option>
+                            </select>
+                        </div>
+                        <div id="customCategoryContainer" style="display: none;">
+                            <input type="text" id="customCategory" placeholder="Enter custom category name">
+                        </div>
+                        <textarea id="macroText" placeholder="Enter the feedback text that will be inserted when this macro is used..." required rows="3"></textarea>
+                        <div class="button-row">
+                            <button type="button" id="addMacro" onclick="addMacro()">Add Macro</button>
+                            <button type="button" id="updateMacro" style="display: none;" onclick="updateMacro()">Update Macro</button>
+                            <button type="button" id="cancelMacroEdit" style="display: none;" onclick="cancelMacroEdit()">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="macro-actions">
+                    <button type="button" id="showMacroForm" onclick="toggleMacroForm()">+ Add New Macro</button>
+                    <div class="copy-macros-container">
+                        <select id="copyFromRubric">
+                            <option value="">Copy macros from another rubric...</option>
+                            {% for rubric in rubrics %}
+                            <option value="{{ rubric.id }}">{{ rubric.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" id="copyMacros" onclick="copyMacrosFromRubric()">Copy</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Rubric Selection -->
             <div class="rubric-select">
                 <h3>Or select an existing rubric:</h3>
@@ -75,7 +126,7 @@
                 <option value="gpt-4o-mini">GPT-4o-mini</option>
                 <option value="gpt-4o">GPT-4o</option>
                 <option value="o1-mini">o1-mini</option>
-                <option value="claude-3-7-sonnet-latest">Claude 3.7 Sonnet</option>
+                <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
                 <option value="claude-3-5-haiku-latest">Claude 3.5 Haiku</option>
             </select>
         </div>
@@ -89,6 +140,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script>
         let currentRubricId = null;  // Add this to track which rubric is being edited
+        let currentMacroId = null;   // Track the macro being edited
 
         async function loadRubric(rubricId) {
             if (!rubricId) return;
@@ -122,10 +174,76 @@
                         `;
                         container.appendChild(newEntry);
                     });
+                    
+                    // Show the macro form now that a rubric is selected
+                    document.querySelector('.macro-form').style.display = 'block';
+                    document.querySelector('.no-macros-message').style.display = 'none';
+                    
+                    // Load macros for this rubric
+                    loadMacros(rubricId);
                 }
             } catch (error) {
                 console.error('Error loading rubric:', error);
                 alert('Error loading rubric');
+            }
+        }
+
+        async function loadMacros(rubricId) {
+            try {
+                const response = await fetch(`/get_macros/${rubricId}`);
+                const data = await response.json();
+                
+                const macrosContainer = document.getElementById('macrosContainer');
+                macrosContainer.innerHTML = '';
+                
+                if (data.macros && data.macros.length > 0) {
+                    // Group macros by category
+                    const macrosByCategory = {};
+                    data.macros.forEach(macro => {
+                        if (!macrosByCategory[macro.category]) {
+                            macrosByCategory[macro.category] = [];
+                        }
+                        macrosByCategory[macro.category].push(macro);
+                    });
+                    
+                    // Create a section for each category
+                    for (const [category, macros] of Object.entries(macrosByCategory)) {
+                        const categorySection = document.createElement('div');
+                        categorySection.className = 'macro-category';
+                        categorySection.innerHTML = `<h4>${category.charAt(0).toUpperCase() + category.slice(1)}</h4>`;
+                        
+                        const macrosList = document.createElement('div');
+                        macrosList.className = 'macros-list';
+                        
+                        macros.forEach(macro => {
+                            const macroItem = document.createElement('div');
+                            macroItem.className = 'macro-item';
+                            macroItem.dataset.id = macro.id;
+                            macroItem.dataset.category = macro.category;
+                            
+                            macroItem.innerHTML = `
+                                <div class="macro-header">
+                                    <span class="macro-name">${macro.name}</span>
+                                    <div class="macro-actions">
+                                        <button class="edit-macro" onclick="editMacro(${macro.id})">Edit</button>
+                                        <button class="delete-macro" onclick="deleteMacro(${macro.id})">Delete</button>
+                                    </div>
+                                </div>
+                                <div class="macro-text">${macro.text}</div>
+                            `;
+                            
+                            macrosList.appendChild(macroItem);
+                        });
+                        
+                        categorySection.appendChild(macrosList);
+                        macrosContainer.appendChild(categorySection);
+                    }
+                } else {
+                    macrosContainer.innerHTML = '<div class="no-macros-message">No macros defined for this rubric yet</div>';
+                }
+            } catch (error) {
+                console.error('Error loading macros:', error);
+                alert('Error loading macros');
             }
         }
 
@@ -186,6 +304,264 @@
                 }
             });
         }
+
+        // Macro management functions
+        function toggleMacroForm() {
+            const form = document.querySelector('.macro-form');
+            const button = document.getElementById('showMacroForm');
+            
+            if (form.style.display === 'none' || form.style.display === '') {
+                form.style.display = 'block';
+                button.textContent = '- Hide Form';
+            } else {
+                form.style.display = 'none';
+                button.textContent = '+ Add New Macro';
+                resetMacroForm();
+            }
+        }
+        
+        function resetMacroForm() {
+            document.getElementById('macroName').value = '';
+            document.getElementById('macroCategory').value = 'general';
+            document.getElementById('customCategory').value = '';
+            document.getElementById('customCategoryContainer').style.display = 'none';
+            document.getElementById('macroText').value = '';
+            document.getElementById('addMacro').style.display = 'inline-block';
+            document.getElementById('updateMacro').style.display = 'none';
+            document.getElementById('cancelMacroEdit').style.display = 'none';
+            currentMacroId = null;
+        }
+        
+        async function addMacro() {
+            if (!currentRubricId) {
+                alert('Please select a rubric first');
+                return;
+            }
+            
+            const name = document.getElementById('macroName').value;
+            let category = document.getElementById('macroCategory').value;
+            const text = document.getElementById('macroText').value;
+            
+            if (category === 'custom') {
+                category = document.getElementById('customCategory').value;
+                if (!category) {
+                    alert('Please enter a custom category name');
+                    return;
+                }
+            }
+            
+            if (!name || !text) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/save_macro', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        rubric_id: currentRubricId,
+                        name: name,
+                        category: category,
+                        text: text
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    resetMacroForm();
+                    loadMacros(currentRubricId);
+                    alert('Macro added successfully!');
+                } else {
+                    alert('Error adding macro: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error adding macro:', error);
+                alert('Error adding macro');
+            }
+        }
+        
+        async function editMacro(macroId) {
+            try {
+                const response = await fetch(`/get_macro/${macroId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const macro = data.macro;
+                    document.getElementById('macroName').value = macro.name;
+                    
+                    // Handle category selection
+                    const categorySelect = document.getElementById('macroCategory');
+                    const predefinedCategories = Array.from(categorySelect.options).map(opt => opt.value);
+                    
+                    if (predefinedCategories.includes(macro.category)) {
+                        categorySelect.value = macro.category;
+                        document.getElementById('customCategoryContainer').style.display = 'none';
+                    } else {
+                        categorySelect.value = 'custom';
+                        document.getElementById('customCategoryContainer').style.display = 'block';
+                        document.getElementById('customCategory').value = macro.category;
+                    }
+                    
+                    document.getElementById('macroText').value = macro.text;
+                    document.getElementById('addMacro').style.display = 'none';
+                    document.getElementById('updateMacro').style.display = 'inline-block';
+                    document.getElementById('cancelMacroEdit').style.display = 'inline-block';
+                    
+                    currentMacroId = macroId;
+                    
+                    // Show the form if it's hidden
+                    document.querySelector('.macro-form').style.display = 'block';
+                    document.getElementById('showMacroForm').textContent = '- Hide Form';
+                    
+                    // Scroll to the form
+                    document.querySelector('.macro-form').scrollIntoView({ behavior: 'smooth' });
+                }
+            } catch (error) {
+                console.error('Error loading macro:', error);
+                alert('Error loading macro');
+            }
+        }
+        
+        async function updateMacro() {
+            if (!currentMacroId) {
+                alert('No macro selected for editing');
+                return;
+            }
+            
+            const name = document.getElementById('macroName').value;
+            let category = document.getElementById('macroCategory').value;
+            const text = document.getElementById('macroText').value;
+            
+            if (category === 'custom') {
+                category = document.getElementById('customCategory').value;
+                if (!category) {
+                    alert('Please enter a custom category name');
+                    return;
+                }
+            }
+            
+            if (!name || !text) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/update_macro/${currentMacroId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        category: category,
+                        text: text
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    resetMacroForm();
+                    loadMacros(currentRubricId);
+                    alert('Macro updated successfully!');
+                } else {
+                    alert('Error updating macro: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error updating macro:', error);
+                alert('Error updating macro');
+            }
+        }
+        
+        function cancelMacroEdit() {
+            resetMacroForm();
+        }
+        
+        async function deleteMacro(macroId) {
+            if (!confirm('Are you sure you want to delete this macro?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/delete_macro/${macroId}`, {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    loadMacros(currentRubricId);
+                    alert('Macro deleted successfully!');
+                } else {
+                    alert('Error deleting macro: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error deleting macro:', error);
+                alert('Error deleting macro');
+            }
+        }
+        
+        async function copyMacrosFromRubric() {
+            const sourceRubricId = document.getElementById('copyFromRubric').value;
+            
+            if (!sourceRubricId) {
+                alert('Please select a source rubric');
+                return;
+            }
+            
+            if (!currentRubricId) {
+                alert('Please select a destination rubric first');
+                return;
+            }
+            
+            if (sourceRubricId === currentRubricId) {
+                alert('Source and destination rubrics cannot be the same');
+                return;
+            }
+            
+            if (!confirm('This will copy all macros from the selected rubric to the current rubric. Continue?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/copy_macros', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        source_rubric_id: sourceRubricId,
+                        destination_rubric_id: currentRubricId
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    loadMacros(currentRubricId);
+                    alert(`${data.count} macros copied successfully!`);
+                } else {
+                    alert('Error copying macros: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error copying macros:', error);
+                alert('Error copying macros');
+            }
+        }
+        
+        // Handle custom category selection
+        document.addEventListener('DOMContentLoaded', function() {
+            const categorySelect = document.getElementById('macroCategory');
+            const customContainer = document.getElementById('customCategoryContainer');
+            
+            categorySelect.addEventListener('change', function() {
+                if (this.value === 'custom') {
+                    customContainer.style.display = 'block';
+                } else {
+                    customContainer.style.display = 'none';
+                }
+            });
+        });
 
         Dropzone.options.myDropzone = {
             init: function() {
