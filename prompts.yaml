@@ -22,11 +22,10 @@ polish_feedback_prompt:
         goal: "Make the feedback more cohesive, professional, and well-structured while preserving the language and tone of the core feedback."
         requirements: |
           1. Do not hallucinate.
-          2. Maintain, word-for-word, the core feedback provided by the grader. This section is indicated by the <core_feedback> and </core_feedback> tags.
-          3. Selectively add feedback from the additional feedback section, indicated by the <additional_feedback> and </additional_feedback> tags.
+          2. Maintain, word-for-word, the core feedback and the additional feedback provided by the grader. These sections are indicated by the <core_feedback> and </core_feedback> tags and the <additional_feedback> and </additional_feedback> tags respectively. You may re-arrange these parts to improve coherence and flow but do not deviate from the original content.  
+          3. Next, selectively add feedback from the additional feedback section, indicated by the <additional_feedback> and </additional_feedback> tags.
           4. In consolidating these sections, adjust the additional feedback to match the tone, style, and presentation of the core feedback.
           5. Do not repeat points already covered in the core feedback.
-        formatting: "Format the response in Markdown with appropriate headers and styling."
 
 moderate_feedback_prompt:
   system_msg: "You are a senior academic with expertise in the subject matter of the essay below. Format all responses in Markdown."
@@ -58,3 +57,24 @@ moderate_feedback_prompt:
         2. Use bullet points for new issues identified
         3. Use bold for key terms or concepts
         4. Include specific examples from the text where possible 
+
+align_feedback_prompt:
+  system_msg: "You are an experienced academic who ensures feedback aligns with the numerical mark given. Format all responses in Markdown."
+  sections:
+    task_description:
+      content: "Review and adjust the following feedback to ensure it aligns with the numerical mark of {mark}%."
+    feedback:
+      content: null  # Will be filled dynamically
+    detailed_instructions:
+      subsections:
+        goal: "Ensure the tone, emphasis, and content of the feedback accurately reflect the numerical mark given."
+        requirements: |
+          1. Do not hallucinate or add new content not present in the original feedback.
+          2. Maintain the core feedback provided by the grader, especially any section titled '--- Applied Feedback Macros ---'.
+          3. Adjust the tone to match the mark:
+             - For high marks (70%+): Emphasize strengths, frame weaknesses as minor areas for improvement
+             - For mid-range marks (50-69%): Balance strengths and weaknesses equally
+             - For low marks (<50%): Acknowledge strengths but clearly explain the significant weaknesses
+          4. Do not change the substance of the feedback, only adjust emphasis and tone.
+          5. Preserve all specific examples and citations from the original feedback.
+        formatting: "Maintain the original Markdown formatting with appropriate headers and styling." 

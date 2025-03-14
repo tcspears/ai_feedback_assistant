@@ -34,7 +34,7 @@ from io import BytesIO
 from services.llm_service import LLMService
 from models.database import (
     db, User, Paper, Rubric, RubricCriteria, Evaluation, 
-    Chat, GradeDescriptors, SavedFeedback
+    Chat, GradeDescriptors, SavedFeedback, FeedbackMacro, AppliedMacro
 )
 from utils.prompt_builder import StructuredPrompt
 from utils.prompt_loader import PromptLoader
@@ -468,6 +468,10 @@ def generate_consolidated_feedback():
         data = request.json
         additional_feedback = data['additional_feedback']
         file_hash = data['file_hash']
+        applied_macro_ids = data.get('applied_macros', [])
+        align_to_mark = data.get('align_to_mark', False)
+        mark = data.get('mark')
+        model = data.get('model', 'gpt-4')
         
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
         
@@ -481,8 +485,21 @@ def generate_consolidated_feedback():
                       .order_by(RubricCriteria.id)
                       .all())
         
+        # Get the text of all applied macros
+        applied_macro_texts = []
+        if applied_macro_ids:
+            applied_macros = FeedbackMacro.query.filter(FeedbackMacro.id.in_(applied_macro_ids)).all()
+            applied_macro_texts = [macro.text for macro in applied_macros]
+        
+        # Combine core feedback with macro texts
+        combined_feedback = additional_feedback
+        if applied_macro_texts:
+            combined_feedback += "\n\n<feedback_macros>\n"
+            for text in applied_macro_texts:
+                combined_feedback += f"\n{text}\n"
+            combined_feedback += "\n</feedback_macros>\n"
         # Build consolidated feedback string
-        consolidated_parts = ["<core_feedback>", additional_feedback, "</core_feedback>" "\n<additional_feedback>"]
+        consolidated_parts = ["<core_feedback>", combined_feedback, "</core_feedback>" "\n<additional_feedback>"]
         
         # Add each criteria-specific feedback with its section name as a subheading
         for eval in evaluations:
@@ -494,6 +511,31 @@ def generate_consolidated_feedback():
         
         consolidated_feedback = "\n\n".join(consolidated_parts)
         consolidated_feedback = consolidated_feedback + "\n</additional_feedback>"
+        
+        # If align_to_mark is True and mark is provided, use the LLM to align the feedback to the mark
+        if align_to_mark and mark is not None:
+            # Use prompt loader to create the prompt
+            prompt, system_msg = prompt_loader.create_prompt(
+                'align_feedback_prompt',
+                feedback=consolidated_feedback,
+                mark=str(mark)
+            )
+            
+            final_prompt = prompt.build()
+            
+            api_logger.info("\n=== ALIGNING FEEDBACK TO MARK ===")
+            api_logger.info(f"Model: {model}")
+            api_logger.debug(f"Prompt:\n{final_prompt}")
+            
+            try:
+                consolidated_feedback = llm_service.generate_response(
+                    model=model,
+                    messages=[{"role": "user", "content": final_prompt}],
+                    system_msg=system_msg
+                )
+            except Exception as e:
+                api_logger.error(f"Error aligning feedback to mark: {str(e)}")
+                # Continue with the original consolidated feedback if alignment fails
         
         # Save the consolidated feedback
         saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
@@ -814,7 +856,8 @@ def polish_feedback(file_hash):
     # Use prompt loader to create the prompt
     prompt, system_msg = prompt_loader.create_prompt(
         'polish_feedback_prompt',
-        feedback_to_polish=saved_feedback.consolidated_feedback
+        feedback_to_polish=saved_feedback.consolidated_feedback,
+        preserve_macros=True  # Add a flag to indicate that macro content should be preserved
     )
 
     final_prompt = prompt.build()
@@ -842,6 +885,7 @@ def moderate_feedback(file_hash):
     data = request.json
     core_feedback = data['core_feedback']
     model = data['model']
+    applied_macro_ids = data.get('applied_macros', [])
     
     paper = Paper.query.filter_by(hash=file_hash).first_or_404()
     
@@ -856,6 +900,20 @@ def moderate_feedback(file_hash):
                   .filter(RubricCriteria.section_name != '_summary')
                   .all())
     
+    # Get the text of all applied macros
+    applied_macro_texts = []
+    if applied_macro_ids:
+        applied_macros = FeedbackMacro.query.filter(FeedbackMacro.id.in_(applied_macro_ids)).all()
+        applied_macro_texts = [macro.text for macro in applied_macros]
+    
+    # Combine core feedback with macro texts
+    combined_feedback = core_feedback
+    if applied_macro_texts:
+        combined_feedback += "<feedback_macros>\n"
+        for text in applied_macro_texts:
+            combined_feedback += f"\n{text}\n"
+        combined_feedback += "</feedback_macros>\n"
+    
     moderated_feedback = {}
     
     for evaluation in evaluations:
@@ -865,13 +923,13 @@ def moderate_feedback(file_hash):
         prompt, system_msg = prompt_loader.create_prompt(
             'moderate_feedback_prompt',
             essay_text=paper.full_text,
-            core_feedback=core_feedback,
+            core_feedback=combined_feedback,
             mark=str(proposed_mark) if proposed_mark is not None else "not provided",
             section=criteria.section_name,
             criteria=criteria.criteria_text
         )
 
-        final_prompt = prompt.build()  # Now build() is called on the prompt object, not the tuple
+        final_prompt = prompt.build()
         
         # Log the prompt for debugging
         api_logger.info(f"Moderation prompt for {criteria.section_name}:")
@@ -1051,6 +1109,236 @@ def delete_paper(file_hash):
         db.session.commit()
         
         return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/get_macros/<int:rubric_id>')
+@login_required
+def get_macros(rubric_id):
+    try:
+        macros = FeedbackMacro.query.filter_by(rubric_id=rubric_id).order_by(FeedbackMacro.category, FeedbackMacro.name).all()
+        
+        return jsonify({
+            "success": True,
+            "macros": [
+                {
+                    "id": macro.id,
+                    "name": macro.name,
+                    "category": macro.category,
+                    "text": macro.text
+                }
+                for macro in macros
+            ]
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/get_macro/<int:macro_id>')
+@login_required
+def get_macro(macro_id):
+    try:
+        macro = FeedbackMacro.query.get_or_404(macro_id)
+        
+        return jsonify({
+            "success": True,
+            "macro": {
+                "id": macro.id,
+                "name": macro.name,
+                "category": macro.category,
+                "text": macro.text,
+                "rubric_id": macro.rubric_id
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/save_macro', methods=['POST'])
+@login_required
+def save_macro():
+    try:
+        data = request.json
+        rubric_id = data['rubric_id']
+        name = data['name']
+        category = data['category']
+        text = data['text']
+        
+        # Create new macro
+        new_macro = FeedbackMacro(
+            rubric_id=rubric_id,
+            name=name,
+            category=category,
+            text=text
+        )
+        db.session.add(new_macro)
+        db.session.commit()
+        
+        return jsonify({"success": True, "macro_id": new_macro.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/update_macro/<int:macro_id>', methods=['POST'])
+@login_required
+def update_macro(macro_id):
+    try:
+        data = request.json
+        macro = FeedbackMacro.query.get_or_404(macro_id)
+        
+        macro.name = data['name']
+        macro.category = data['category']
+        macro.text = data['text']
+        
+        db.session.commit()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/delete_macro/<int:macro_id>', methods=['POST'])
+@login_required
+def delete_macro(macro_id):
+    try:
+        macro = FeedbackMacro.query.get_or_404(macro_id)
+        
+        # Delete any applied instances of this macro
+        AppliedMacro.query.filter_by(macro_id=macro_id).delete()
+        
+        # Delete the macro itself
+        db.session.delete(macro)
+        db.session.commit()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/copy_macros', methods=['POST'])
+@login_required
+def copy_macros():
+    try:
+        data = request.json
+        source_rubric_id = data['source_rubric_id']
+        destination_rubric_id = data['destination_rubric_id']
+        
+        # Get all macros from the source rubric
+        source_macros = FeedbackMacro.query.filter_by(rubric_id=source_rubric_id).all()
+        
+        # Copy each macro to the destination rubric
+        count = 0
+        for macro in source_macros:
+            new_macro = FeedbackMacro(
+                rubric_id=destination_rubric_id,
+                name=macro.name,
+                category=macro.category,
+                text=macro.text
+            )
+            db.session.add(new_macro)
+            count += 1
+        
+        db.session.commit()
+        
+        return jsonify({"success": True, "count": count})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/get_paper_macros/<file_hash>')
+@login_required
+def get_paper_macros(file_hash):
+    try:
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get the rubric ID for this paper
+        rubric_id = (db.session.query(RubricCriteria.rubric_id)
+                    .join(Evaluation, Evaluation.criteria_id == RubricCriteria.id)
+                    .filter(Evaluation.paper_id == paper.id)
+                    .first())
+        
+        if not rubric_id:
+            return jsonify({"success": True, "macros": []})
+        
+        # Get all macros for this rubric
+        macros = FeedbackMacro.query.filter_by(rubric_id=rubric_id[0]).order_by(FeedbackMacro.category, FeedbackMacro.name).all()
+        
+        # Get applied macros for this paper
+        applied_macro_ids = set(am.macro_id for am in AppliedMacro.query.filter_by(paper_id=paper.id).all())
+        
+        return jsonify({
+            "success": True,
+            "macros": [
+                {
+                    "id": macro.id,
+                    "name": macro.name,
+                    "category": macro.category,
+                    "text": macro.text,
+                    "applied": macro.id in applied_macro_ids
+                }
+                for macro in macros
+            ]
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/save_applied_macros/<file_hash>', methods=['POST'])
+@login_required
+def save_applied_macros(file_hash):
+    try:
+        data = request.json
+        applied_macro_ids = data['applied_macros']
+        
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Delete all existing applied macros for this paper
+        AppliedMacro.query.filter_by(paper_id=paper.id).delete()
+        
+        # Add new applied macros
+        for macro_id in applied_macro_ids:
+            applied_macro = AppliedMacro(
+                paper_id=paper.id,
+                macro_id=macro_id
+            )
+            db.session.add(applied_macro)
+        
+        db.session.commit()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/save_macro_from_paper/<file_hash>', methods=['POST'])
+@login_required
+def save_macro_from_paper(file_hash):
+    try:
+        data = request.json
+        name = data['name']
+        category = data['category']
+        text = data['text']
+        
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get the rubric ID for this paper
+        rubric_id = (db.session.query(RubricCriteria.rubric_id)
+                    .join(Evaluation, Evaluation.criteria_id == RubricCriteria.id)
+                    .filter(Evaluation.paper_id == paper.id)
+                    .first())
+        
+        if not rubric_id:
+            return jsonify({"success": False, "error": "No rubric found for this paper"})
+        
+        # Create new macro
+        new_macro = FeedbackMacro(
+            rubric_id=rubric_id[0],
+            name=name,
+            category=category,
+            text=text
+        )
+        db.session.add(new_macro)
+        db.session.commit()
+        
+        return jsonify({"success": True, "macro_id": new_macro.id})
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)})

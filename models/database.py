@@ -23,6 +23,7 @@ class Paper(db.Model):
     pdf_path = db.Column(db.String(255), nullable=False)
     evaluations = db.relationship('Evaluation', backref='paper', lazy=True)
     chats = db.relationship('Chat', backref='paper', lazy=True)
+    applied_macros = db.relationship('AppliedMacro', backref='paper', lazy=True)
 
 class Rubric(db.Model):
     __tablename__ = 'rubrics'
@@ -31,6 +32,7 @@ class Rubric(db.Model):
     description = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=func.now())
     criteria = db.relationship('RubricCriteria', backref='rubric', lazy=True)
+    macros = db.relationship('FeedbackMacro', backref='rubric', lazy=True)
 
 class RubricCriteria(db.Model):
     __tablename__ = 'rubric_criteria'
@@ -69,3 +71,23 @@ class SavedFeedback(db.Model):
     consolidated_feedback = db.Column(db.Text)
     mark = db.Column(db.Float)
     updated_at = db.Column(db.DateTime, nullable=False, default=func.now())
+
+class FeedbackMacro(db.Model):
+    """Stores feedback macros that can be reused across papers with the same rubric."""
+    __tablename__ = 'feedback_macros'
+    id = db.Column(db.Integer, primary_key=True)
+    rubric_id = db.Column(db.Integer, db.ForeignKey('rubrics.id'), nullable=False)
+    name = db.Column(db.String(255), nullable=False)  # Short name for the macro (e.g., "poor thesis")
+    text = db.Column(db.Text, nullable=False)  # The text to insert when the macro is used
+    category = db.Column(db.String(50), nullable=False, default='general')  # Category for grouping/coloring
+    created_at = db.Column(db.DateTime, nullable=False, default=func.now())
+
+class AppliedMacro(db.Model):
+    """Tracks which macros have been applied to a specific paper."""
+    __tablename__ = 'applied_macros'
+    id = db.Column(db.Integer, primary_key=True)
+    paper_id = db.Column(db.Integer, db.ForeignKey('papers.id'), nullable=False)
+    macro_id = db.Column(db.Integer, db.ForeignKey('feedback_macros.id'), nullable=False)
+    applied_at = db.Column(db.DateTime, nullable=False, default=func.now())
+    # Define relationship to FeedbackMacro
+    macro = db.relationship('FeedbackMacro', backref='applications')

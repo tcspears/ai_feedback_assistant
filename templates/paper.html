@@ -49,6 +49,19 @@
                 <!-- Core Feedback Section -->
                 <div class="evaluation-section">
                     <h3>Core Feedback</h3>
+                    
+                    <!-- Feedback Macros -->
+                    <div class="feedback-macros">
+                        <div class="macros-header">
+                            <h4>Feedback Macros</h4>
+                            <button id="addNewMacroBtn" onclick="showAddMacroModal()" title="Add a new macro">+</button>
+                        </div>
+                        <div id="macroButtonsContainer" class="macro-buttons-container">
+                            <!-- Macro buttons will be loaded here -->
+                            <div class="loading-macros">Loading macros...</div>
+                        </div>
+                    </div>
+                    
                     <textarea id="additionalFeedback" 
                               placeholder="Enter your core feedback here...">{{ saved_feedback.additional_feedback if saved_feedback }}</textarea>
                     <div class="button-row">
@@ -80,10 +93,12 @@
                             class="feedback-textarea" 
                             id="evaluation-{{ evaluation.id }}"
                             data-evaluation-id="{{ evaluation.id }}"
+                            data-disabled="{{ not evaluation.evaluation_text }}"
                             spellcheck="true"
-                            {% if not evaluation.evaluation_text %}disabled{% endif %}
                             placeholder="Criteria-specific feedback will appear here after moderation...">{{ evaluation.evaluation_text }}</textarea>
-                        <button class="save-feedback-btn" onclick="saveFeedback({{ evaluation.id }})" {% if not evaluation.evaluation_text %}disabled{% endif %}>
+                        <button class="save-feedback-btn" 
+                                onclick="saveFeedback('{{ evaluation.id }}')" 
+                                data-disabled="{{ not evaluation.evaluation_text }}">
                             Save Changes
                         </button>
                         <div class="save-status" id="save-status-{{ evaluation.id }}"></div>
@@ -102,8 +117,9 @@
                             <button id="saveConsolidatedFeedback" onclick="saveConsolidatedFeedback()" style="display: none;">
                                 Save Feedback
                             </button>
-                            <button id="polishFeedback" onclick="polishFeedback()" 
-                                    style="display: {% if saved_consolidated_feedback %}inline-block{% else %}none{% endif %};">
+                            <button id="polishFeedback" 
+                                    onclick="polishFeedback()" 
+                                    data-display="{{ 'inline-block' if saved_consolidated_feedback else 'none' }}">
                                 Polish Feedback
                             </button>
                             <button id="copyConsolidatedFeedback" onclick="copyConsolidatedFeedback()">
@@ -222,6 +238,18 @@
             const additionalFeedback = document.getElementById('additionalFeedback').value;
             const numericalMark = this.value;
             moderateButton.disabled = !(additionalFeedback && numericalMark);
+        });
+
+        // Set disabled state for textareas and buttons based on data attributes
+        document.querySelectorAll('[data-disabled]').forEach(el => {
+            if (el.getAttribute('data-disabled') === 'True') {
+                el.disabled = true;
+            }
+        });
+        
+        // Set display style for elements with data-display attribute
+        document.querySelectorAll('[data-display]').forEach(el => {
+            el.style.display = el.getAttribute('data-display');
         });
     });
 
@@ -357,7 +385,8 @@
                     model: '{{ model }}',
                     file_hash: '{{ file_hash }}',
                     align_to_mark: alignToMark,
-                    mark: parseFloat(mark)
+                    mark: parseFloat(mark),
+                    applied_macros: Array.from(appliedMacros)
                 })
             });
 
@@ -415,6 +444,9 @@
             if (!data.success) {
                 throw new Error(data.error || 'Failed to save');
             }
+            
+            // Also save the applied macros state
+            await saveAppliedMacros();
             
             // Enable the moderate button only if both feedback and mark are present
             moderateButton.disabled = !(additionalFeedback && numericalMark);
@@ -619,7 +651,8 @@
                 },
                 body: JSON.stringify({
                     core_feedback: coreFeedback,
-                    model: '{{ model }}'
+                    model: '{{ model }}',
+                    applied_macros: Array.from(appliedMacros)
                 })
             });
 
@@ -858,6 +891,253 @@
                 }
             });
     }, 60000); // Update every minute
+
+    // Add these functions for macro management
+    let currentMacroId = null;
+    let appliedMacros = new Set();
+
+    async function loadMacros() {
+        try {
+            // Get the rubric ID from the related papers section
+            const currentPaperLink = document.querySelector('.related-paper-link.current-paper');
+            if (!currentPaperLink) return;
+            
+            const response = await fetch(`/get_paper_macros/{{ file_hash }}`);
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to load macros');
+            }
+            
+            const macrosContainer = document.getElementById('macroButtonsContainer');
+            macrosContainer.innerHTML = '';
+            
+            // Group macros by category
+            const macrosByCategory = {};
+            data.macros.forEach(macro => {
+                if (!macrosByCategory[macro.category]) {
+                    macrosByCategory[macro.category] = [];
+                }
+                macrosByCategory[macro.category].push(macro);
+            });
+            
+            // Create a section for each category
+            for (const [category, macros] of Object.entries(macrosByCategory)) {
+                const categorySection = document.createElement('div');
+                categorySection.className = 'macro-category';
+                categorySection.innerHTML = `<h5>${category.charAt(0).toUpperCase() + category.slice(1)}</h5>`;
+                
+                const macrosList = document.createElement('div');
+                macrosList.className = 'macro-buttons';
+                
+                macros.forEach(macro => {
+                    const macroButton = document.createElement('button');
+                    macroButton.className = `macro-button ${macro.applied ? 'active' : ''}`;
+                    macroButton.dataset.id = macro.id;
+                    macroButton.dataset.category = macro.category;
+                    macroButton.dataset.text = macro.text;
+                    macroButton.textContent = macro.name;
+                    macroButton.title = macro.text;
+                    macroButton.onclick = function() { toggleMacro(this); };
+                    
+                    // Add to applied macros set if it's already applied
+                    if (macro.applied) {
+                        appliedMacros.add(macro.id);
+                    }
+                    
+                    // Set button color based on category
+                    macroButton.style.backgroundColor = getCategoryColor(macro.category);
+                    
+                    macrosList.appendChild(macroButton);
+                });
+                
+                categorySection.appendChild(macrosList);
+                macrosContainer.appendChild(categorySection);
+            }
+            
+            if (Object.keys(macrosByCategory).length === 0) {
+                macrosContainer.innerHTML = '<div class="no-macros-message">No macros available for this rubric</div>';
+            }
+        } catch (error) {
+            console.error('Error loading macros:', error);
+            document.getElementById('macroButtonsContainer').innerHTML = 
+                `<div class="error-message">Error loading macros: ${error.message}</div>`;
+        }
+    }
+
+    function getCategoryColor(category) {
+        const colorMap = {
+            'general': '#6c757d',      // Gray
+            'structure': '#007bff',    // Blue
+            'content': '#28a745',      // Green
+            'language': '#dc3545',     // Red
+            'critical': '#fd7e14',     // Orange
+            'sources': '#6f42c1'       // Purple
+        };
+        
+        return colorMap[category.toLowerCase()] || '#6c757d';
+    }
+
+    async function toggleMacro(button) {
+        const macroId = button.dataset.id;
+        const isActive = button.classList.contains('active');
+        
+        if (isActive) {
+            // Remove from applied macros
+            appliedMacros.delete(parseInt(macroId));
+            button.classList.remove('active');
+        } else {
+            // Add to applied macros
+            appliedMacros.add(parseInt(macroId));
+            button.classList.add('active');
+        }
+        
+        // Save the applied macros state
+        await saveAppliedMacros();
+        
+        // We no longer update the feedback text directly
+        // The macros will be combined with core feedback only when sent to the language model
+    }
+
+    async function saveAppliedMacros() {
+        try {
+            const response = await fetch(`/save_applied_macros/{{ file_hash }}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    applied_macros: Array.from(appliedMacros)
+                })
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to save applied macros');
+            }
+        } catch (error) {
+            console.error('Error saving applied macros:', error);
+        }
+    }
+
+    function showAddMacroModal() {
+        document.getElementById('macroModal').style.display = 'block';
+        resetMacroForm();
+    }
+
+    function closeModal() {
+        document.getElementById('macroModal').style.display = 'none';
+    }
+
+    function resetMacroForm() {
+        document.getElementById('macroName').value = '';
+        document.getElementById('macroCategory').value = 'general';
+        document.getElementById('customCategory').value = '';
+        document.getElementById('customCategoryContainer').style.display = 'none';
+        document.getElementById('macroText').value = '';
+        currentMacroId = null;
+    }
+
+    async function saveMacro() {
+        const name = document.getElementById('macroName').value;
+        let category = document.getElementById('macroCategory').value;
+        const text = document.getElementById('macroText').value;
+        
+        if (category === 'custom') {
+            category = document.getElementById('customCategory').value;
+            if (!category) {
+                alert('Please enter a custom category name');
+                return;
+            }
+        }
+        
+        if (!name || !text) {
+            alert('Please fill in all fields');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/save_macro_from_paper/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: name,
+                    category: category,
+                    text: text
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                closeModal();
+                loadMacros();
+                alert('Macro added successfully!');
+            } else {
+                alert('Error adding macro: ' + (data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Error adding macro:', error);
+            alert('Error adding macro');
+        }
+    }
+
+    // Handle custom category selection
+    document.addEventListener('DOMContentLoaded', function() {
+        const categorySelect = document.getElementById('macroCategory');
+        const customContainer = document.getElementById('customCategoryContainer');
+        
+        if (categorySelect) {
+            categorySelect.addEventListener('change', function() {
+                if (this.value === 'custom') {
+                    customContainer.style.display = 'block';
+                } else {
+                    customContainer.style.display = 'none';
+                }
+            });
+        }
+        
+        // Load macros when the page loads
+        loadMacros();
+        
+        // Close the modal when clicking outside of it
+        window.onclick = function(event) {
+            const modal = document.getElementById('macroModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        };
+    });
     </script>
+
+    <!-- Macro Modal -->
+    <div id="macroModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeModal()">&times;</span>
+            <h3>Add New Feedback Macro</h3>
+            <div class="macro-form-fields">
+                <div class="form-row">
+                    <input type="text" id="macroName" placeholder="Short name (e.g., 'poor thesis')" required>
+                    <select id="macroCategory">
+                        <option value="general">General</option>
+                        <option value="structure">Structure</option>
+                        <option value="content">Content</option>
+                        <option value="language">Language</option>
+                        <option value="critical">Critical Analysis</option>
+                        <option value="sources">Sources/References</option>
+                        <option value="custom">Custom...</option>
+                    </select>
+                </div>
+                <div id="customCategoryContainer" style="display: none;">
+                    <input type="text" id="customCategory" placeholder="Enter custom category name">
+                </div>
+                <textarea id="macroText" placeholder="Enter the feedback text that will be inserted when this macro is used..." required rows="3"></textarea>
+                <div class="button-row">
+                    <button type="button" id="saveMacroBtn" onclick="saveMacro()">Save Macro</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
