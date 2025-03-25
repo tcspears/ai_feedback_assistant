@@ -343,10 +343,17 @@ def chat(file_hash):
         
         return jsonify({"response": ai_message})
         
+    except ValueError as e:
+        # Handle model-related errors
+        db.session.rollback()
+        error_msg = str(e)
+        api_logger.error(f"Model error in chat: {error_msg}")
+        return jsonify({"error": f"Model error: {error_msg}"}), 400
+        
     except Exception as e:
         db.session.rollback()
         api_logger.error(f"Error in chat: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
 @app.route('/clear_chat/<file_hash>', methods=['POST'])
 @login_required

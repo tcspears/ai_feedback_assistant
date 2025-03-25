@@ -1,11 +1,25 @@
 from typing import Dict, List
 from openai import OpenAI
 from anthropic import Anthropic
+import logging
 
 class LLMService:
     def __init__(self, openai_client: OpenAI, anthropic_client: Anthropic):
         self.openai_client = openai_client
         self.anthropic_client = anthropic_client
+        
+        # Model mapping to handle legacy model names
+        self.model_mapping = {
+            # Legacy models mapped to current models
+            'gpt-4': 'gpt-4o',
+            'gpt-4-mini': 'gpt-4o-mini',
+            'gpt-3.5-turbo': 'gpt-4o-mini',  # Map older models to newer ones
+            'claude-3-opus': 'claude-3-5-sonnet-latest',
+            'claude-3-sonnet': 'claude-3-5-sonnet-latest',
+            'claude-3-haiku': 'claude-3-5-haiku-latest',
+        }
+        
+        # Supported model handlers
         self.model_handlers = {
             'gpt-4o': self._handle_openai,
             'gpt-4o-mini': self._handle_openai,
@@ -28,9 +42,15 @@ class LLMService:
         Returns:
             Generated response text
         """
+        # Map legacy model names to supported models
+        if model in self.model_mapping:
+            logging.info(f"Mapping legacy model '{model}' to '{self.model_mapping[model]}'")
+            model = self.model_mapping[model]
+        
         handler = self.model_handlers.get(model)
         if not handler:
-            raise ValueError(f"Unsupported model: {model}")
+            supported_models = list(self.model_handlers.keys()) + list(self.model_mapping.keys())
+            raise ValueError(f"Unsupported model: {model}. Supported models are: {', '.join(supported_models)}")
         
         return handler(model, messages, system_msg)
     
