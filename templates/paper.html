@@ -263,6 +263,11 @@
         chatMessages.innerHTML += `<p><strong>You:</strong> ${message}</p>`;
         messageInput.value = '';
 
+        // Show loading indicator
+        const loadingId = `loading-${Date.now()}`;
+        chatMessages.innerHTML += `<p id="${loadingId}"><strong>AI:</strong> <em>Thinking...</em></p>`;
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
         // Send to server
         fetch(`/chat/{{ file_hash }}`, {
             method: 'POST',
@@ -274,14 +279,38 @@
                 model: '{{ model }}'
             })
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
-            chatMessages.innerHTML += `<p><strong>AI:</strong> ${data.response}</p>`;
+            // Remove loading indicator
+            const loadingElement = document.getElementById(loadingId);
+            if (loadingElement) {
+                loadingElement.remove();
+            }
+
+            if (data.error) {
+                chatMessages.innerHTML += `<p class="error"><strong>Error:</strong> ${data.error}</p>`;
+            } else if (data.response) {
+                chatMessages.innerHTML += `<p><strong>AI:</strong> ${data.response}</p>`;
+            } else {
+                chatMessages.innerHTML += `<p class="error"><strong>Error:</strong> Received an empty response from the server.</p>`;
+            }
             chatMessages.scrollTop = chatMessages.scrollHeight;
         })
         .catch(error => {
+            // Remove loading indicator
+            const loadingElement = document.getElementById(loadingId);
+            if (loadingElement) {
+                loadingElement.remove();
+            }
+
             console.error('Error:', error);
-            chatMessages.innerHTML += `<p class="error">Error sending message. Please try again.</p>`;
+            chatMessages.innerHTML += `<p class="error"><strong>Error:</strong> ${error.message || 'Failed to get a response. The model may not be supported.'}</p>`;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
         });
     }
 

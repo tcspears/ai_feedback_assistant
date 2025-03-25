@@ -31,6 +31,9 @@ from dataclasses import dataclass, field
 import csv
 from io import StringIO
 from io import BytesIO
+import docx  # For handling DOCX files
+import subprocess  # For running LibreOffice conversion
+import mimetypes  # For detecting file types
 from services.llm_service import LLMService
 from models.database import (
     db, User, Paper, Rubric, RubricCriteria, Evaluation, 
@@ -340,10 +343,17 @@ def chat(file_hash):
         
         return jsonify({"response": ai_message})
         
+    except ValueError as e:
+        # Handle model-related errors
+        db.session.rollback()
+        error_msg = str(e)
+        api_logger.error(f"Model error in chat: {error_msg}")
+        return jsonify({"error": f"Model error: {error_msg}"}), 400
+        
     except Exception as e:
         db.session.rollback()
         api_logger.error(f"Error in chat: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
 @app.route('/clear_chat/<file_hash>', methods=['POST'])
 @login_required
@@ -607,6 +617,31 @@ def remove_personal_identifiers(text):
     
     return text
 
+# Function to extract text from DOCX files
+def extract_text_from_docx(docx_path):
+    doc = docx.Document(docx_path)
+    full_text = []
+    for para in doc.paragraphs:
+        full_text.append(para.text)
+    return '\n'.join(full_text)
+
+# Function to convert DOCX to PDF using LibreOffice
+def convert_docx_to_pdf(docx_path, output_dir):
+    try:
+        libreoffice_path = app.config.get('LIBREOFFICE_PATH', '/usr/bin/soffice')
+        cmd = [libreoffice_path, '--headless', '--convert-to', 'pdf', '--outdir', output_dir, docx_path]
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate()
+        
+        if process.returncode != 0:
+            raise Exception(f"LibreOffice conversion failed: {stderr.decode()}")
+        
+        # Return the path to the generated PDF
+        pdf_filename = os.path.splitext(os.path.basename(docx_path))[0] + '.pdf'
+        return os.path.join(output_dir, pdf_filename)
+    except Exception as e:
+        raise Exception(f"Error converting DOCX to PDF: {str(e)}")
+
 @app.route('/', methods=['GET', 'POST'])
 @login_required
 def index():
@@ -635,16 +670,36 @@ def index():
                 if existing_paper:
                     return jsonify({'redirect': url_for('paper', file_hash=file_hash)})
                 
-                # Store PDF in a permanent location
+                # Determine file type and process accordingly
+                file_ext = os.path.splitext(filename)[1].lower()
                 pdf_storage_path = os.path.join(upload_dir, f"{file_hash}.pdf")
-                os.rename(file_path, pdf_storage_path)
+                full_text = ""
                 
-                # Extract text
-                with open(pdf_storage_path, 'rb') as file:
-                    reader = PyPDF2.PdfReader(file)
-                    full_text = ""
-                    for page in reader.pages:
-                        full_text += page.extract_text()
+                if file_ext == '.pdf':
+                    # Just move the PDF to its permanent location
+                    os.rename(file_path, pdf_storage_path)
+                    
+                    # Extract text from PDF
+                    with open(pdf_storage_path, 'rb') as file:
+                        reader = PyPDF2.PdfReader(file)
+                        for page in reader.pages:
+                            full_text += page.extract_text()
+                
+                elif file_ext == '.docx':
+                    # Extract text from DOCX
+                    full_text = extract_text_from_docx(file_path)
+                    
+                    # Convert DOCX to PDF
+                    temp_pdf_path = convert_docx_to_pdf(file_path, upload_dir)
+                    
+                    # Move the converted PDF to its permanent location
+                    os.rename(temp_pdf_path, pdf_storage_path)
+                    
+                    # Remove the original DOCX file
+                    os.remove(file_path)
+                
+                else:
+                    return jsonify({"error": "Unsupported file format. Please upload a PDF or DOCX file."}), 400
                 
                 # Remove personal identifiers
                 full_text = remove_personal_identifiers(full_text)
@@ -678,6 +733,7 @@ def index():
                 return jsonify({"error": str(e)}), 500
             
             finally:
+                # Clean up any temporary files
                 if os.path.exists(file_path):
                     os.remove(file_path)
     
@@ -729,6 +785,7 @@ def admin():
                 Chat.query.delete()
                 Evaluation.query.delete()
                 SavedFeedback.query.delete()
+                AppliedMacro.query.delete()
                 Paper.query.delete()
                 db.session.commit()
                 flash('All articles and chats have been deleted.')
@@ -745,6 +802,7 @@ def admin():
                 Chat.query.filter_by(paper_id=paper.id).delete()
                 Evaluation.query.filter_by(paper_id=paper.id).delete()
                 SavedFeedback.query.filter_by(paper_id=paper.id).delete()
+                AppliedMacro.query.filter_by(paper_id=paper.id).delete()
                 
                 # Delete paper
                 db.session.delete(paper)
@@ -1103,6 +1161,7 @@ def delete_paper(file_hash):
         Chat.query.filter_by(paper_id=paper.id).delete()
         Evaluation.query.filter_by(paper_id=paper.id).delete()
         SavedFeedback.query.filter_by(paper_id=paper.id).delete()
+        AppliedMacro.query.filter_by(paper_id=paper.id).delete()
         
         # Delete the paper record
         db.session.delete(paper)

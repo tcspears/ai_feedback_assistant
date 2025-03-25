@@ -17,3 +17,6 @@ DROPZONE_UPLOAD_ON_CLICK: True
 #SQLAlchemy configuration
 SQLALCHEMY_DATABASE_URI: 'sqlite:///users.db'
 SQLALCHEMY_TRACK_MODIFICATIONS: false
+
+# LibreOffice configuration
+LIBREOFFICE_PATH: '/usr/bin/soffice'  # Path to LibreOffice soffice binary
