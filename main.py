@@ -262,14 +262,15 @@ def paper(file_hash):
         func.strftime('%s', SavedFeedback.updated_at) - 
         func.strftime('%s', Paper.created_at)
     ))
-    .select_from(Paper)  # Explicitly specify the starting point
-    .join(SavedFeedback)  # Join to SavedFeedback
-    .join(Evaluation, Evaluation.paper_id == Paper.id)  # Join to Evaluation with explicit condition
-    .join(RubricCriteria, RubricCriteria.id == Evaluation.criteria_id)  # Join to RubricCriteria with explicit condition
+    .select_from(Paper)
+    .join(SavedFeedback)
+    .join(Evaluation, Evaluation.paper_id == Paper.id)
+    .join(RubricCriteria, RubricCriteria.id == Evaluation.criteria_id)
     .filter(
         RubricCriteria.rubric_id == current_rubric_id[0],
         SavedFeedback.updated_at.isnot(None)
-    ).scalar())
+    )
+    .scalar())
     
     # Format average time as HH:MM:SS
     if avg_time:
@@ -1034,9 +1035,9 @@ def get_average_time(file_hash):
     if not current_rubric_id:
         return jsonify({"average_time": None})
     
-    # Calculate average grading time using first save time
+    # Calculate average grading time using a subquery to get the first save time per paper
     avg_time = (db.session.query(func.avg(
-        func.strftime('%s', func.min(SavedFeedback.updated_at)) - 
+        func.strftime('%s', SavedFeedback.updated_at) - 
         func.strftime('%s', Paper.created_at)
     ))
     .select_from(Paper)
@@ -1047,7 +1048,6 @@ def get_average_time(file_hash):
         RubricCriteria.rubric_id == current_rubric_id[0],
         SavedFeedback.updated_at.isnot(None)
     )
-    .group_by(Paper.id)  # Group by paper to get first save time per paper
     .scalar())
     
     if avg_time:

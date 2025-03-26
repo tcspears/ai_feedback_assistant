@@ -1078,7 +1078,7 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    model: '{{ model }}'
+                    model: document.getElementById('modelSelect').value
                 })
             });
             
@@ -1120,11 +1120,11 @@
                     <div class="feedback-comparison">
                         <div class="original-feedback">
                             <h4>Original Feedback</h4>
-                            <div class="feedback-content">${marked.parse(data.original_feedback)}</div>
+                            <div class="feedback-content">${data.original_feedback ? marked.parse(data.original_feedback) : 'No original feedback available'}</div>
                         </div>
                         <div class="moderated-feedback">
                             <h4>Moderated Feedback</h4>
-                            <div class="feedback-content">${marked.parse(data.moderated_feedback)}</div>
+                            <div class="feedback-content">${data.moderated_feedback ? marked.parse(data.moderated_feedback) : 'No moderated feedback available yet'}</div>
                         </div>
                     </div>
                 `;
