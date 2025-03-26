@@ -788,6 +788,10 @@
         const isActive = button.classList.contains('active');
         
         try {
+            console.log('Starting toggleMacro with button:', button);
+            console.log('Macro ID:', macroId);
+            console.log('Is active:', isActive);
+            
             const response = await fetch('/toggle_macro/{{ file_hash }}', {
                 method: 'POST',
                 headers: {
@@ -813,24 +817,39 @@
             }
             
             // Update the core feedback textarea with the macro text
-            const criteriaId = button.closest('.evaluation-section').querySelector('.core-feedback-textarea').dataset.criteriaId;
-            const textarea = document.getElementById(`core-feedback-${criteriaId}`);
-            const currentText = textarea.value;
-            const macroText = button.dataset.text;
+            const evaluationSection = button.closest('.evaluation-section');
+            console.log('Found evaluation section:', evaluationSection);
             
-            if (!isActive) {
-                // Add macro text
-                textarea.value = currentText + (currentText ? '\n\n' : '') + macroText;
+            if (evaluationSection) {
+                const textarea = evaluationSection.querySelector('.core-feedback-textarea');
+                console.log('Found textarea:', textarea);
+                
+                if (textarea) {
+                    const criteriaId = textarea.dataset.criteriaId;
+                    console.log('Criteria ID:', criteriaId);
+                    
+                    const currentText = textarea.value;
+                    const macroText = button.dataset.text;
+                    console.log('Current text:', currentText);
+                    console.log('Macro text:', macroText);
+                    
+                    if (!isActive) {
+                        // Add macro text
+                        textarea.value = currentText + (currentText ? '\n\n' : '') + macroText;
+                    } else {
+                        // Remove macro text
+                        textarea.value = currentText.replace(macroText, '').replace(/\n\s*\n/g, '\n\n').trim();
+                    }
+                } else {
+                    console.log('No textarea found in evaluation section');
+                }
             } else {
-                // Remove macro text
-                textarea.value = currentText.replace(macroText, '').replace(/\n\s*\n/g, '\n\n').trim();
+                console.log('No evaluation section found');
             }
             
-            // Save the updated feedback
-            checkModerateButton();
-            
         } catch (error) {
-            console.error('Error:', error);
+            console.error('Error in toggleMacro:', error);
+            console.error('Error stack:', error.stack);
             alert('Error toggling macro: ' + error.message);
         }
     }

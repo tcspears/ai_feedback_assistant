@@ -490,7 +490,7 @@ def generate_consolidated_feedback():
     try:
         data = request.json
         criterion_feedback = data.get('criterion_feedback', {})
-        model = data.get('model', 'gpt-4o')
+        model = data.get('model', 'gpt-4')
         file_hash = data.get('file_hash')
         align_to_mark = data.get('align_to_mark', False)
         mark = data.get('mark')
@@ -530,29 +530,20 @@ def generate_consolidated_feedback():
                     prompt_parts.append(f"- {macro.name}: {macro.text}")
         
         # Build the final prompt
-        prompt = "\n".join(prompt_parts)
+        feedback_text = "\n".join(prompt_parts)
+        
+        # Use prompt loader to create the prompt and get system message
+        prompt, system_msg = prompt_loader.create_prompt(
+            'polish_feedback_prompt',
+            feedback_to_polish=feedback_text
+        )
         
         # Generate consolidated feedback using the selected model
-        if model.startswith('gpt'):
-            response = client_openai.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "You are an expert at consolidating feedback for academic essays. Your task is to combine the provided feedback into a clear, well-structured response that maintains the key points while improving the overall flow and coherence."},
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            consolidated_feedback = response.choices[0].message.content
-        elif model.startswith('claude'):
-            response = client_anthropic.messages.create(
-                model=model,
-                max_tokens=1000,
-                messages=[
-                    {"role": "user", "content": f"You are an expert at consolidating feedback for academic essays. Your task is to combine the provided feedback into a clear, well-structured response that maintains the key points while improving the overall flow and coherence.\n\nHere is the feedback to consolidate:\n\n{prompt}"}
-                ]
-            )
-            consolidated_feedback = response.content[0].text
-        else:
-            return jsonify({'error': f'Unsupported model: {model}'})
+        consolidated_feedback = llm_service.generate_response(
+            model=model,
+            messages=[{"role": "user", "content": prompt.build()}],
+            system_msg=system_msg
+        )
         
         return jsonify({
             'success': True,
@@ -942,16 +933,10 @@ def moderate_feedback(file_hash):
             criteria=criteria.criteria_text
         )
 
-        final_prompt = prompt.build()
-        
-        # Log the prompt for debugging
-        api_logger.info(f"Moderation prompt for {criteria.section_name}:")
-        api_logger.info(final_prompt)
-
         try:
             moderated_text = llm_service.generate_response(
                 model=model,
-                messages=[{"role": "user", "content": final_prompt}],
+                messages=[{"role": "user", "content": prompt.build()}],
                 system_msg=system_msg
             )
             
