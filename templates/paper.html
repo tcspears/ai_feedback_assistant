@@ -520,9 +520,6 @@
                                 <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
                                     Generate Consolidated Feedback
                                 </button>
-                                <button id="saveConsolidatedFeedback" onclick="saveConsolidatedFeedback()" style="display: none;">
-                                    Save Feedback
-                                </button>
                                 <button id="copyConsolidatedFeedback" onclick="copyConsolidatedFeedback()">
                                     Copy Feedback
                                 </button>
@@ -544,7 +541,7 @@
                                 </div>
                             </div>
                         </div>
-                        <textarea id="consolidatedFeedbackRaw" style="display: none;">{{ saved_consolidated_feedback }}</textarea>
+                        <textarea id="consolidatedFeedbackRaw" style="display: none;" data-auto-save="true">{{ saved_consolidated_feedback }}</textarea>
                         <div id="consolidatedFeedback" class="evaluation-content markdown-rendered">
                             {{ saved_consolidated_feedback | markdown if saved_consolidated_feedback }}
                         </div>
@@ -712,6 +709,18 @@
                 }, 1000); // Save after 1 second of no typing
             });
         });
+        
+        // Add auto-save functionality for consolidated feedback
+        const consolidatedFeedbackTextarea = document.getElementById('consolidatedFeedbackRaw');
+        if (consolidatedFeedbackTextarea) {
+            let timeout;
+            consolidatedFeedbackTextarea.addEventListener('input', function() {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => {
+                    saveConsolidatedFeedback();
+                }, 1000); // Save after 1 second of no typing
+            });
+        }
         
         // Close the modal when clicking outside of it
         window.onclick = function(event) {
@@ -907,13 +916,32 @@
                 throw new Error(data.error);
             }
             
+            // Update the UI with the new feedback
             document.getElementById('consolidatedFeedbackRaw').value = data.consolidated_feedback;
             document.getElementById('consolidatedFeedback').innerHTML = marked.parse(data.consolidated_feedback);
             
-            // Show save button if in markdown view
-            if (document.getElementById('showMarkdownToggle').checked) {
-                document.getElementById('saveConsolidatedFeedback').style.display = 'inline-block';
+            // Automatically save the consolidated feedback
+            const saveResponse = await fetch('/save_consolidated_feedback/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    consolidated_feedback: data.consolidated_feedback
+                })
+            });
+            
+            const saveData = await saveResponse.json();
+            if (!saveData.success) {
+                throw new Error(saveData.error || 'Failed to save consolidated feedback');
             }
+            
+            // Show success message
+            const saveStatus = document.createElement('div');
+            saveStatus.textContent = 'Feedback generated and saved successfully';
+            saveStatus.className = 'save-status show';
+            button.parentNode.appendChild(saveStatus);
+            setTimeout(() => saveStatus.remove(), 3000);
             
         } catch (error) {
             console.error('Error:', error);
@@ -1008,28 +1036,20 @@
         const showMarkdown = document.getElementById('showMarkdownToggle').checked;
         const renderedView = document.getElementById('consolidatedFeedback');
         const rawView = document.getElementById('consolidatedFeedbackRaw');
-        const saveButton = document.getElementById('saveConsolidatedFeedback');
         
         if (showMarkdown) {
             renderedView.style.display = 'none';
             rawView.style.display = 'block';
-            saveButton.style.display = 'inline-block';  // Show save button in edit mode
         } else {
             // Update rendered view with current markdown content
             renderedView.innerHTML = marked.parse(rawView.value);
             renderedView.style.display = 'block';
             rawView.style.display = 'none';
-            saveButton.style.display = 'none';  // Hide save button in preview mode
         }
     }
 
     async function saveConsolidatedFeedback() {
         const feedback = document.getElementById('consolidatedFeedbackRaw').value;
-        const button = document.getElementById('saveConsolidatedFeedback');
-        const originalText = button.textContent;
-        
-        button.textContent = 'Saving...';
-        button.disabled = true;
         
         try {
             const response = await fetch('/save_consolidated_feedback/{{ file_hash }}', {
@@ -1052,17 +1072,20 @@
             
             // Show success message
             const saveStatus = document.createElement('div');
-            saveStatus.textContent = 'Changes saved successfully';
+            saveStatus.textContent = 'Changes saved';
             saveStatus.className = 'save-status show';
-            button.parentNode.appendChild(saveStatus);
+            document.getElementById('consolidatedFeedbackRaw').parentNode.appendChild(saveStatus);
             setTimeout(() => saveStatus.remove(), 3000);
             
         } catch (error) {
             console.error('Error:', error);
-            alert('Error saving feedback');
-        } finally {
-            button.textContent = originalText;
-            button.disabled = false;
+            // Show error message
+            const saveStatus = document.createElement('div');
+            saveStatus.textContent = 'Error saving changes';
+            saveStatus.className = 'save-status show';
+            saveStatus.style.color = '#f44336';
+            document.getElementById('consolidatedFeedbackRaw').parentNode.appendChild(saveStatus);
+            setTimeout(() => saveStatus.remove(), 3000);
         }
     }
 
