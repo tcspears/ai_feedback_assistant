@@ -7,6 +7,413 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .criteria-entry {
+            border: 1px solid #444;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #2a2a2a;
+        }
+        .criteria-entry:hover {
+            background-color: #333;
+        }
+        .criteria-entry.selected {
+            border-color: #007bff;
+            background-color: #1a1a1a;
+        }
+        .criteria-macros {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #444;
+        }
+        .macro-category-section {
+            margin-bottom: 15px;
+        }
+        .macro-category-header {
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+        .macro-items-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .macro-button {
+            padding: 4px 8px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background-color: #2a2a2a;
+            color: #fff;
+            cursor: pointer;
+        }
+        .macro-button:hover {
+            background-color: #333;
+        }
+        .macro-button.active {
+            background-color: #007bff;
+            border-color: #0056b3;
+        }
+        .model-select-container {
+            margin-bottom: 15px;
+        }
+        .model-select-container select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background-color: #2a2a2a;
+            color: #fff;
+            font-size: 14px;
+        }
+        .model-select-container select:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+        }
+        .core-feedback-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+        .core-feedback-section h4 {
+            margin-top: 0;
+            color: var(--text-color);
+            font-size: 16px;
+        }
+        .core-feedback-textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 14px;
+            line-height: 1.5;
+            background-color: var(--summary-bg);
+            color: var(--text-color);
+            font-family: inherit;
+            resize: vertical;
+        }
+        .core-feedback-textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.25);
+        }
+        .core-feedback-textarea::placeholder {
+            color: #888;
+        }
+        .feedback-macros {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-color);
+        }
+        .macros-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .macros-header h5 {
+            color: var(--text-color);
+            margin: 0;
+        }
+        .add-macro-btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+        .add-macro-btn:hover {
+            background-color: var(--hover-color);
+        }
+        .macro-category {
+            margin-bottom: 15px;
+        }
+        .macro-category h5 {
+            color: var(--text-color);
+            margin-bottom: 8px;
+        }
+        .macro-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .macro-button {
+            padding: 6px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: var(--container-bg);
+            color: var(--text-color);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .macro-button:hover {
+            background-color: var(--summary-bg);
+        }
+        .macro-button.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--hover-color);
+        }
+        .save-status {
+            color: #28a745;
+            font-size: 0.9em;
+            margin-top: 5px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .save-status.show {
+            opacity: 1;
+        }
+        .evaluation-section {
+            background-color: #2a2a2a;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .evaluation-section h3 {
+            color: #fff;
+            margin-bottom: 15px;
+        }
+        .mark-input-container {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .mark-input-container input {
+            padding: 8px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background-color: #1a1a1a;
+            color: #fff;
+            width: 100px;
+        }
+        .mark-input-container button {
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+        .mark-input-container button:hover {
+            background-color: #0056b3;
+        }
+        .mark-input-container button:disabled {
+            background-color: #444;
+            cursor: not-allowed;
+        }
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+        .modal-content {
+            background-color: var(--container-bg);
+            margin: 10% auto;
+            padding: 25px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            width: 80%;
+            max-width: 600px;
+            position: relative;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+        }
+        .close-modal {
+            color: var(--text-color);
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close-modal:hover {
+            color: var(--primary-color);
+        }
+        /* Macro Form Styles */
+        .macro-form-fields {
+            margin-top: 15px;
+        }
+        .form-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .form-row input, .form-row select {
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: var(--summary-bg);
+            color: var(--text-color);
+        }
+        .form-row input {
+            flex: 2;
+        }
+        .form-row select {
+            flex: 1;
+        }
+        #customCategoryContainer {
+            margin-bottom: 10px;
+        }
+        #customCategory {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: var(--summary-bg);
+            color: var(--text-color);
+        }
+        #macroText {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: var(--summary-bg);
+            color: var(--text-color);
+            font-family: inherit;
+            resize: vertical;
+            min-height: 80px;
+            margin-bottom: 10px;
+        }
+        .button-row {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        #saveMacroBtn {
+            padding: 8px 16px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        #saveMacroBtn:hover {
+            background-color: var(--hover-color);
+        }
+        .macro-buttons-container {
+            margin-bottom: 10px;
+        }
+        
+        /* Moderation Tab Styles */
+        .moderation-section {
+            padding: 20px;
+            background-color: var(--summary-bg);
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .model-select-container {
+            margin-bottom: 20px;
+        }
+        
+        .model-select-container select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+        
+        .moderation-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .moderation-controls button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        #startModeration {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        #completeModeration {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        #rejectModeration {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .criterion-moderation {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+        
+        .moderation-result-box {
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .moderation-result-box.passes {
+            background-color: rgba(40, 167, 69, 0.1);
+            border: 1px solid #28a745;
+            color: #28a745;
+        }
+        
+        .moderation-result-box.fails {
+            background-color: rgba(220, 53, 69, 0.1);
+            border: 1px solid #dc3545;
+            color: #dc3545;
+        }
+        
+        .moderation-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .moderation-actions button {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        .accept-changes {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .reject-changes {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .moderation-actions button:hover {
+            opacity: 0.9;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -46,106 +453,142 @@
 
             <!-- Middle Panel - Evaluations -->
             <div class="evaluations-panel">
-                <!-- Core Feedback Section -->
-                <div class="evaluation-section">
-                    <h3>Core Feedback</h3>
-                    
-                    <!-- Feedback Macros -->
-                    <div class="feedback-macros">
-                        <div class="macros-header">
-                            <h4>Feedback Macros</h4>
-                            <button id="addNewMacroBtn" onclick="showAddMacroModal()" title="Add a new macro">+</button>
-                        </div>
-                        <div id="macroButtonsContainer" class="macro-buttons-container">
-                            <!-- Macro buttons will be loaded here -->
-                            <div class="loading-macros">Loading macros...</div>
-                        </div>
-                    </div>
-                    
-                    <textarea id="additionalFeedback" 
-                              placeholder="Enter your core feedback here...">{{ saved_feedback.additional_feedback if saved_feedback }}</textarea>
-                    <div class="button-row">
-                        <button id="saveAdditionalFeedback" onclick="saveAdditionalFeedback()">Save Core Feedback</button>
-                    </div>
+                <!-- Tab Navigation -->
+                <div class="tab-navigation">
+                    <button class="tab-button active" onclick="switchTab('marking')">Marking</button>
+                    <button class="tab-button" onclick="switchTab('moderation')">Moderation</button>
                 </div>
 
-                <!-- Numerical Mark Section -->
-                <div class="evaluation-section">
-                    <h3>Numerical Mark</h3>
-                    <div class="mark-input-container">
-                        <input type="number" id="numericalMark" min="0" max="100" step="0.5" 
-                               value="{{ saved_feedback.mark if saved_feedback and saved_feedback.mark }}"
-                               placeholder="Enter mark (0-100)"
-                               oninput="checkModerateButton()">
-                        <button id="saveMark" onclick="saveMark()">Save Mark</button>
-                        <button id="moderateFeedback" onclick="moderateFeedback()" disabled>
-                            Moderate Feedback
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Criteria-specific Evaluations -->
-                {% for evaluation in evaluations %}
-                <div class="evaluation-section">
-                    <h3>{{ evaluation.section_name }}</h3>
-                    <div class="evaluation-content">
-                        <textarea 
-                            class="feedback-textarea" 
-                            id="evaluation-{{ evaluation.id }}"
-                            data-evaluation-id="{{ evaluation.id }}"
-                            data-disabled="{{ not evaluation.evaluation_text }}"
-                            spellcheck="true"
-                            placeholder="Criteria-specific feedback will appear here after moderation...">{{ evaluation.evaluation_text }}</textarea>
-                        <button class="save-feedback-btn" 
-                                onclick="saveFeedback('{{ evaluation.id }}')" 
-                                data-disabled="{{ not evaluation.evaluation_text }}">
-                            Save Changes
-                        </button>
-                        <div class="save-status" id="save-status-{{ evaluation.id }}"></div>
-                    </div>
-                </div>
-                {% endfor %}
-
-                <!-- Consolidated Feedback -->
-                <div class="evaluation-section">
-                    <h3>Consolidated Feedback</h3>
-                    <div class="consolidated-feedback-controls">
-                        <div class="button-row">
-                            <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
-                                Generate Consolidated Feedback
-                            </button>
-                            <button id="saveConsolidatedFeedback" onclick="saveConsolidatedFeedback()" style="display: none;">
-                                Save Feedback
-                            </button>
-                            <button id="polishFeedback" 
-                                    onclick="polishFeedback()" 
-                                    data-display="{{ 'inline-block' if saved_consolidated_feedback else 'none' }}">
-                                Polish Feedback
-                            </button>
-                            <button id="copyConsolidatedFeedback" onclick="copyConsolidatedFeedback()">
-                                Copy Feedback
-                            </button>
-                        </div>
-                        <div class="toggle-row">
-                            <div class="toggle-container">
-                                <label class="switch">
-                                    <input type="checkbox" id="showMarkdownToggle" onchange="toggleMarkdownView()">
-                                    <span class="slider round"></span>
-                                </label>
-                                <span class="toggle-label">Show Markdown</span>
+                <!-- Marking Tab Content -->
+                <div id="marking-tab" class="tab-content active">
+                    <!-- Criteria-specific Evaluations -->
+                    {% for evaluation in evaluations %}
+                    <div class="evaluation-section">
+                        <h3>{{ evaluation.section_name }}</h3>
+                        
+                        <!-- Core Feedback Section -->
+                        <div class="core-feedback-section">
+                            <h4>Core Feedback</h4>
+                            
+                            <!-- Feedback Macros -->
+                            <div class="feedback-macros">
+                                <div class="macros-header">
+                                    <h5>Feedback Macros</h5>
+                                    <button class="add-macro-btn" onclick="showAddMacroModal('{{ evaluation.criteria_id }}')" title="Add a new macro">+</button>
+                                </div>
+                                <div id="macroButtonsContainer-{{ evaluation.criteria_id }}" class="macro-buttons-container">
+                                    <!-- Macro buttons will be loaded here -->
+                                    <div class="loading-macros">Loading macros...</div>
+                                </div>
                             </div>
-                            <div class="toggle-container">
-                                <label class="switch">
-                                    <input type="checkbox" id="alignToMarkToggle">
-                                    <span class="slider round"></span>
-                                </label>
-                                <span class="toggle-label">Align language to mark</span>
+                            
+                            <textarea 
+                                class="core-feedback-textarea" 
+                                id="core-feedback-{{ evaluation.criteria_id }}"
+                                data-criteria-id="{{ evaluation.criteria_id }}"
+                                placeholder="Enter core feedback for this criterion...">{{ evaluation.core_feedback if evaluation.core_feedback else '' }}</textarea>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <!-- Numerical Mark Section -->
+                    <div class="evaluation-section">
+                        <h3>Numerical Mark</h3>
+                        <div class="mark-input-container">
+                            <input type="number" id="numericalMark" min="0" max="100" step="0.5" 
+                                   value="{{ saved_feedback.mark if saved_feedback and saved_feedback.mark }}"
+                                   placeholder="Enter mark (0-100)"
+                                   oninput="checkModerateButton()">
+                            <button id="saveMark" onclick="saveMark()">Save Mark</button>
+                        </div>
+                    </div>
+
+                    <!-- Consolidated Feedback -->
+                    <div class="evaluation-section">
+                        <h3>Consolidated Feedback</h3>
+                        <div class="consolidated-feedback-controls">
+                            <div class="model-select-container">
+                                <select id="modelSelect">
+                                    <option value="gpt-4o-mini">GPT-4o-mini</option>
+                                    <option value="gpt-4o">GPT-4o</option>
+                                    <option value="o1-mini">o1-mini</option>
+                                    <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
+                                    <option value="claude-3-5-haiku-latest">Claude 3.5 Haiku</option>
+                                </select>
+                            </div>
+                            <div class="button-row">
+                                <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
+                                    Generate Consolidated Feedback
+                                </button>
+                                <button id="copyConsolidatedFeedback" onclick="copyConsolidatedFeedback()">
+                                    Copy Feedback
+                                </button>
+                            </div>
+                            <div class="toggle-row">
+                                <div class="toggle-container">
+                                    <label class="switch">
+                                        <input type="checkbox" id="showMarkdownToggle" onchange="toggleMarkdownView()">
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <span class="toggle-label">Show Markdown</span>
+                                </div>
+                                <div class="toggle-container">
+                                    <label class="switch">
+                                        <input type="checkbox" id="alignToMarkToggle">
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <span class="toggle-label">Align language to mark</span>
+                                </div>
                             </div>
                         </div>
+                        <textarea id="consolidatedFeedbackRaw" style="display: none;" data-auto-save="true">{{ saved_consolidated_feedback }}</textarea>
+                        <div id="consolidatedFeedback" class="evaluation-content markdown-rendered">
+                            {{ saved_consolidated_feedback | markdown if saved_consolidated_feedback }}
+                        </div>
                     </div>
-                    <textarea id="consolidatedFeedbackRaw" style="display: none;">{{ saved_consolidated_feedback }}</textarea>
-                    <div id="consolidatedFeedback" class="evaluation-content markdown-rendered">
-                        {{ saved_consolidated_feedback | markdown if saved_consolidated_feedback }}
+                </div>
+
+                <!-- Moderation Tab Content -->
+                <div id="moderation-tab" class="tab-content">
+                    <div class="moderation-section">
+                        <h3>Feedback Moderation</h3>
+                        
+                        <!-- Model Selection -->
+                        <div class="model-select-container">
+                            <select id="moderationModelSelect">
+                                <option value="gpt-4o-mini">GPT-4o-mini</option>
+                                <option value="gpt-4o">GPT-4o</option>
+                                <option value="o1-mini">o1-mini</option>
+                                <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
+                                <option value="claude-3-5-haiku-latest">Claude 3.5 Haiku</option>
+                            </select>
+                        </div>
+
+                        <!-- Moderation Controls -->
+                        <div class="moderation-controls">
+                            <button id="startModeration" onclick="startModeration()">Start Moderation</button>
+                            <button id="completeModeration" style="display: none;" onclick="completeModeration()">Accept All Changes</button>
+                            <button id="rejectModeration" style="display: none;" onclick="rejectModeration()">Reject All Changes</button>
+                        </div>
+
+                        <!-- Moderation Status -->
+                        <div id="moderationStatus"></div>
+
+                        <!-- Criterion-specific Moderation Results -->
+                        <div id="criterionModerationResults">
+                            {% for evaluation in evaluations %}
+                            <div class="criterion-moderation" data-criteria-id="{{ evaluation.criteria_id }}">
+                                <h4>{{ evaluation.section_name }}</h4>
+                                <div class="moderation-result-box">
+                                    <div class="result-status">Pending moderation...</div>
+                                </div>
+                                <div class="moderation-actions" style="display: none;">
+                                    <button class="accept-changes" onclick="acceptCriterionChanges('{{ evaluation.criteria_id }}')">Accept</button>
+                                    <button class="reject-changes" onclick="rejectCriterionChanges('{{ evaluation.criteria_id }}')">Reject</button>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
                     </div>
                 </div>
 
@@ -251,6 +694,41 @@
         document.querySelectorAll('[data-display]').forEach(el => {
             el.style.display = el.getAttribute('data-display');
         });
+
+        // Load macros when the page loads
+        loadMacros();
+        
+        // Add auto-save functionality for core feedback textareas
+        document.querySelectorAll('.core-feedback-textarea').forEach(textarea => {
+            let timeout;
+            textarea.addEventListener('input', function() {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => {
+                    const criteriaId = this.dataset.criteriaId;
+                    saveFeedback(criteriaId);
+                }, 1000); // Save after 1 second of no typing
+            });
+        });
+        
+        // Add auto-save functionality for consolidated feedback
+        const consolidatedFeedbackTextarea = document.getElementById('consolidatedFeedbackRaw');
+        if (consolidatedFeedbackTextarea) {
+            let timeout;
+            consolidatedFeedbackTextarea.addEventListener('input', function() {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => {
+                    saveConsolidatedFeedback();
+                }, 1000); // Save after 1 second of no typing
+            });
+        }
+        
+        // Close the modal when clicking outside of it
+        window.onclick = function(event) {
+            const modal = document.getElementById('macroModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        };
     });
 
     function sendMessage() {
@@ -276,7 +754,7 @@
             },
             body: JSON.stringify({
                 message: message,
-                model: '{{ model }}'
+                model: document.getElementById('modelSelect').value
             })
         })
         .then(response => {
@@ -398,47 +876,73 @@
         const originalText = button.textContent;
         button.textContent = 'Generating...';
         button.disabled = true;
-
-        const additionalFeedback = document.getElementById('additionalFeedback').value;
-        const alignToMark = document.getElementById('alignToMarkToggle').checked;
-        const mark = document.getElementById('numericalMark').value;
         
         try {
+            // Collect all criterion feedback
+            const criterionFeedback = {};
+            document.querySelectorAll('.core-feedback-textarea').forEach(textarea => {
+                const criteriaId = textarea.dataset.criteriaId;
+                criterionFeedback[criteriaId] = textarea.value;
+            });
+            
+            const mark = document.getElementById('numericalMark').value;
+            const alignToMark = document.getElementById('alignToMarkToggle').checked;
+            
+            // Get all active macro buttons and collect their IDs
+            const activeMacros = Array.from(document.querySelectorAll('.macro-button.active'))
+                .map(button => button.dataset.id);
+            
             const response = await fetch('/generate_consolidated_feedback', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    additional_feedback: additionalFeedback,
-                    model: '{{ model }}',
+                    criterion_feedback: criterionFeedback,
+                    model: document.getElementById('modelSelect').value,
                     file_hash: '{{ file_hash }}',
                     align_to_mark: alignToMark,
                     mark: parseFloat(mark),
-                    applied_macros: Array.from(appliedMacros)
+                    applied_macros: activeMacros
                 })
             });
-
+            
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-
+            
             const data = await response.json();
             if (data.error) {
                 throw new Error(data.error);
             }
-
+            
+            // Update the UI with the new feedback
             document.getElementById('consolidatedFeedbackRaw').value = data.consolidated_feedback;
             document.getElementById('consolidatedFeedback').innerHTML = marked.parse(data.consolidated_feedback);
             
-            // Show save button if in markdown view
-            if (document.getElementById('showMarkdownToggle').checked) {
-                document.getElementById('saveConsolidatedFeedback').style.display = 'inline-block';
+            // Automatically save the consolidated feedback
+            const saveResponse = await fetch('/save_consolidated_feedback/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    consolidated_feedback: data.consolidated_feedback
+                })
+            });
+            
+            const saveData = await saveResponse.json();
+            if (!saveData.success) {
+                throw new Error(saveData.error || 'Failed to save consolidated feedback');
             }
-
-            // Show the Polish button after successful generation
-            document.getElementById('polishFeedback').style.display = 'inline-block';
-
+            
+            // Show success message
+            const saveStatus = document.createElement('div');
+            saveStatus.textContent = 'Feedback generated and saved successfully';
+            saveStatus.className = 'save-status show';
+            button.parentNode.appendChild(saveStatus);
+            setTimeout(() => saveStatus.remove(), 3000);
+            
         } catch (error) {
             console.error('Error:', error);
             alert(`Error generating consolidated feedback: ${error.message}`);
@@ -489,45 +993,42 @@
         }
     }
 
-    async function saveFeedback(evaluationId) {
-        const textarea = document.getElementById(`evaluation-${evaluationId}`);
-        const saveStatus = document.getElementById(`save-status-${evaluationId}`);
-        const button = textarea.nextElementSibling; // Get the save button
-        
-        // Disable button and show saving status
-        button.disabled = true;
-        button.textContent = 'Saving...';
+    async function saveFeedback(criteriaId) {
+        const textarea = document.getElementById(`core-feedback-${criteriaId}`);
+        if (!textarea) return;
         
         try {
-            const response = await fetch('/save_feedback', {
+            const response = await fetch(`/save_feedback?file_hash={{ file_hash }}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    evaluation_id: evaluationId,
+                    evaluation_id: criteriaId,
                     feedback_text: textarea.value
                 })
             });
             
             const data = await response.json();
             if (data.success) {
-                saveStatus.textContent = 'Changes saved successfully';
-                saveStatus.classList.add('show');
-                setTimeout(() => {
-                    saveStatus.classList.remove('show');
-                }, 3000);
+                // Show save status
+                const saveStatus = document.createElement('div');
+                saveStatus.textContent = 'Changes saved';
+                saveStatus.className = 'save-status show';
+                textarea.parentNode.appendChild(saveStatus);
+                setTimeout(() => saveStatus.remove(), 3000);
             } else {
                 throw new Error(data.error || 'Failed to save changes');
             }
         } catch (error) {
             console.error('Error:', error);
+            // Show error status
+            const saveStatus = document.createElement('div');
             saveStatus.textContent = 'Error saving changes';
+            saveStatus.className = 'save-status show';
             saveStatus.style.color = '#f44336';
-            saveStatus.classList.add('show');
-        } finally {
-            button.disabled = false;
-            button.textContent = 'Save Changes';
+            textarea.parentNode.appendChild(saveStatus);
+            setTimeout(() => saveStatus.remove(), 3000);
         }
     }
 
@@ -535,28 +1036,20 @@
         const showMarkdown = document.getElementById('showMarkdownToggle').checked;
         const renderedView = document.getElementById('consolidatedFeedback');
         const rawView = document.getElementById('consolidatedFeedbackRaw');
-        const saveButton = document.getElementById('saveConsolidatedFeedback');
         
         if (showMarkdown) {
             renderedView.style.display = 'none';
             rawView.style.display = 'block';
-            saveButton.style.display = 'inline-block';  // Show save button in edit mode
         } else {
             // Update rendered view with current markdown content
             renderedView.innerHTML = marked.parse(rawView.value);
             renderedView.style.display = 'block';
             rawView.style.display = 'none';
-            saveButton.style.display = 'none';  // Hide save button in preview mode
         }
     }
 
     async function saveConsolidatedFeedback() {
         const feedback = document.getElementById('consolidatedFeedbackRaw').value;
-        const button = document.getElementById('saveConsolidatedFeedback');
-        const originalText = button.textContent;
-        
-        button.textContent = 'Saving...';
-        button.disabled = true;
         
         try {
             const response = await fetch('/save_consolidated_feedback/{{ file_hash }}', {
@@ -579,20 +1072,20 @@
             
             // Show success message
             const saveStatus = document.createElement('div');
-            saveStatus.textContent = 'Changes saved successfully';
+            saveStatus.textContent = 'Changes saved';
             saveStatus.className = 'save-status show';
-            button.parentNode.appendChild(saveStatus);
+            document.getElementById('consolidatedFeedbackRaw').parentNode.appendChild(saveStatus);
             setTimeout(() => saveStatus.remove(), 3000);
-
-            // Show the Polish button after successful save
-            document.getElementById('polishFeedback').style.display = 'inline-block';
             
         } catch (error) {
             console.error('Error:', error);
-            alert('Error saving feedback');
-        } finally {
-            button.textContent = originalText;
-            button.disabled = false;
+            // Show error message
+            const saveStatus = document.createElement('div');
+            saveStatus.textContent = 'Error saving changes';
+            saveStatus.className = 'save-status show';
+            saveStatus.style.color = '#f44336';
+            document.getElementById('consolidatedFeedbackRaw').parentNode.appendChild(saveStatus);
+            setTimeout(() => saveStatus.remove(), 3000);
         }
     }
 
@@ -628,241 +1121,6 @@
         }
     }
 
-    async function polishFeedback() {
-        const button = document.getElementById('polishFeedback');
-        const originalText = button.textContent;
-        button.textContent = 'Polishing...';
-        button.disabled = true;
-
-        try {
-            const response = await fetch('/polish_feedback/{{ file_hash }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    model: '{{ model }}'
-                })
-            });
-
-            const data = await response.json();
-            
-            // Update both views with polished feedback
-            document.getElementById('consolidatedFeedbackRaw').value = data.polished_feedback;
-            document.getElementById('consolidatedFeedback').innerHTML = marked.parse(data.polished_feedback);
-            
-            // Show save button if in markdown view
-            if (document.getElementById('showMarkdownToggle').checked) {
-                document.getElementById('saveConsolidatedFeedback').style.display = 'inline-block';
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error polishing feedback');
-        } finally {
-            button.textContent = originalText;
-            button.disabled = false;
-        }
-    }
-
-    async function moderateFeedback() {
-        const button = document.getElementById('moderateFeedback');
-        const originalText = button.textContent;
-        button.textContent = 'Moderating...';
-        button.disabled = true;
-
-        const coreFeedback = document.getElementById('additionalFeedback').value;
-        
-        try {
-            const response = await fetch('/moderate_feedback/{{ file_hash }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    core_feedback: coreFeedback,
-                    model: '{{ model }}',
-                    applied_macros: Array.from(appliedMacros)
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            // Update each criteria textarea with the moderated feedback
-            for (const [evaluationId, feedback] of Object.entries(data.moderated_feedback)) {
-                const textarea = document.getElementById(`evaluation-${evaluationId}`);
-                if (textarea) {
-                    textarea.value = feedback;
-                    textarea.disabled = false;
-                    // Enable the corresponding save button
-                    textarea.nextElementSibling.disabled = false;
-                }
-            }
-
-        } catch (error) {
-            console.error('Error:', error);
-            alert(`Error moderating feedback: ${error.message}`);
-        } finally {
-            button.textContent = originalText;
-            button.disabled = false;
-        }
-    }
-
-    // Create debounced save functions for each type of content
-    const debouncedSaveCoreFeedback = _.debounce(async (content) => {
-        try {
-            const response = await fetch('/save_additional_feedback/{{ file_hash }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    additional_feedback: content
-                })
-            });
-            
-            const data = await response.json();
-            if (!data.success) {
-                throw new Error(data.error || 'Failed to save');
-            }
-            
-            // Enable the moderate button after successful save
-            checkModerateButton();
-            
-            // Show a brief "Saved" message
-            const saveStatus = document.createElement('div');
-            saveStatus.textContent = 'Changes saved';
-            saveStatus.className = 'save-status show';
-            document.getElementById('additionalFeedback').parentNode.appendChild(saveStatus);
-            setTimeout(() => saveStatus.remove(), 2000);
-            
-        } catch (error) {
-            console.error('Error:', error);
-            // Optionally show an error message to the user
-        }
-    }, 1000);  // Wait 1 second after last keystroke before saving
-
-    const debouncedSaveCriteriaFeedback = _.debounce(async (evaluationId, content) => {
-        try {
-            const response = await fetch('/save_feedback', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    evaluation_id: evaluationId,
-                    feedback_text: content
-                })
-            });
-            
-            const data = await response.json();
-            if (!data.success) {
-                throw new Error(data.error || 'Failed to save');
-            }
-            
-            // Show brief save status
-            const saveStatus = document.getElementById(`save-status-${evaluationId}`);
-            if (saveStatus) {
-                saveStatus.textContent = 'Changes saved';
-                saveStatus.classList.add('show');
-                setTimeout(() => saveStatus.classList.remove('show'), 2000);
-            }
-            
-        } catch (error) {
-            console.error('Error:', error);
-        }
-    }, 1000);
-
-    // Add event listeners to textareas
-    document.addEventListener('DOMContentLoaded', function() {
-        // Core feedback autosave
-        const coreFeedbackTextarea = document.getElementById('additionalFeedback');
-        if (coreFeedbackTextarea) {
-            coreFeedbackTextarea.addEventListener('input', (e) => {
-                debouncedSaveCoreFeedback(e.target.value);
-                checkModerateButton();
-            });
-        }
-        
-        // Criteria feedback autosave
-        const criteriaTextareas = document.querySelectorAll('.feedback-textarea[data-evaluation-id]');
-        criteriaTextareas.forEach(textarea => {
-            textarea.addEventListener('input', (e) => {
-                const evaluationId = e.target.dataset.evaluationId;
-                debouncedSaveCriteriaFeedback(evaluationId, e.target.value);
-            });
-        });
-        
-        // Consolidated feedback autosave
-        const consolidatedTextarea = document.getElementById('consolidatedFeedbackRaw');
-        if (consolidatedTextarea) {
-            consolidatedTextarea.addEventListener('input', (e) => {
-                debouncedSaveConsolidatedFeedback(e.target.value);
-            });
-        }
-    });
-
-    // Add debounced save for consolidated feedback
-    const debouncedSaveConsolidatedFeedback = _.debounce(async (content) => {
-        try {
-            const response = await fetch('/save_consolidated_feedback/{{ file_hash }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    consolidated_feedback: content
-                })
-            });
-            
-            const data = await response.json();
-            if (!data.success) {
-                throw new Error(data.error || 'Failed to save');
-            }
-            
-            // Update the rendered view if in preview mode
-            if (!document.getElementById('showMarkdownToggle').checked) {
-                document.getElementById('consolidatedFeedback').innerHTML = marked.parse(content);
-            }
-            
-            // Show brief save status
-            const saveStatus = document.createElement('div');
-            saveStatus.textContent = 'Changes saved';
-            saveStatus.className = 'save-status show';
-            document.getElementById('consolidatedFeedbackRaw').parentNode.appendChild(saveStatus);
-            setTimeout(() => saveStatus.remove(), 2000);
-            
-        } catch (error) {
-            console.error('Error:', error);
-        }
-    }, 1000);
-
-    function copyConsolidatedFeedback() {
-        const rawFeedback = document.getElementById('consolidatedFeedbackRaw');
-        const renderedFeedback = document.getElementById('consolidatedFeedback');
-        const textToCopy = document.getElementById('showMarkdownToggle').checked ? 
-            rawFeedback.value : 
-            renderedFeedback.innerText;
-        
-        navigator.clipboard.writeText(textToCopy).then(() => {
-            const button = document.getElementById('copyConsolidatedFeedback');
-            const originalText = button.textContent;
-            button.textContent = 'Copied!';
-            setTimeout(() => {
-                button.textContent = originalText;
-            }, 2000);
-        }).catch(err => {
-            console.error('Failed to copy text:', err);
-            alert('Failed to copy text to clipboard');
-        });
-    }
-
     function checkModerateButton() {
         const moderateButton = document.getElementById('moderateFeedback');
         const additionalFeedback = document.getElementById('additionalFeedback').value.trim();
@@ -875,23 +1133,6 @@
         moderateButton.disabled = !additionalFeedback || !numericalMark;
         console.log('Button disabled:', moderateButton.disabled);
     }
-
-    // Add event listeners properly while maintaining auto-save
-    document.addEventListener('DOMContentLoaded', function() {
-        const additionalFeedback = document.getElementById('additionalFeedback');
-        const numericalMark = document.getElementById('numericalMark');
-        
-        // Add event listeners for both inputs
-        additionalFeedback.addEventListener('input', (e) => {
-            debouncedSaveCoreFeedback(e.target.value);
-            checkModerateButton();
-        });
-        
-        numericalMark.addEventListener('input', checkModerateButton);
-        
-        // Initial check
-        checkModerateButton();
-    });
 
     function formatTime(seconds) {
         const hours = Math.floor(seconds / 3600);
@@ -912,7 +1153,7 @@
 
     // Update average time every minute
     setInterval(() => {
-        fetch(`/get_average_time/${fileHash}`)
+        fetch(`/get_average_time/{{ file_hash }}`)
             .then(response => response.json())
             .then(data => {
                 if (data.average_time) {
@@ -927,10 +1168,6 @@
 
     async function loadMacros() {
         try {
-            // Get the rubric ID from the related papers section
-            const currentPaperLink = document.querySelector('.related-paper-link.current-paper');
-            if (!currentPaperLink) return;
-            
             const response = await fetch(`/get_paper_macros/{{ file_hash }}`);
             const data = await response.json();
             
@@ -938,59 +1175,65 @@
                 throw new Error(data.error || 'Failed to load macros');
             }
             
-            const macrosContainer = document.getElementById('macroButtonsContainer');
-            macrosContainer.innerHTML = '';
-            
-            // Group macros by category
-            const macrosByCategory = {};
+            // Group macros by criteria
+            const macrosByCriteria = {};
             data.macros.forEach(macro => {
-                if (!macrosByCategory[macro.category]) {
-                    macrosByCategory[macro.category] = [];
+                if (!macrosByCriteria[macro.criteria_id]) {
+                    macrosByCriteria[macro.criteria_id] = [];
                 }
-                macrosByCategory[macro.category].push(macro);
+                macrosByCriteria[macro.criteria_id].push(macro);
             });
             
-            // Create a section for each category
-            for (const [category, macros] of Object.entries(macrosByCategory)) {
-                const categorySection = document.createElement('div');
-                categorySection.className = 'macro-category';
-                categorySection.innerHTML = `<h5>${category.charAt(0).toUpperCase() + category.slice(1)}</h5>`;
+            // Update macro containers for each criterion
+            for (const [criteriaId, macros] of Object.entries(macrosByCriteria)) {
+                const container = document.getElementById(`macroButtonsContainer-${criteriaId}`);
+                if (!container) continue;
                 
-                const macrosList = document.createElement('div');
-                macrosList.className = 'macro-buttons';
+                container.innerHTML = '';
                 
+                // Group macros by category
+                const macrosByCategory = {};
                 macros.forEach(macro => {
-                    const macroButton = document.createElement('button');
-                    macroButton.className = `macro-button ${macro.applied ? 'active' : ''}`;
-                    macroButton.dataset.id = macro.id;
-                    macroButton.dataset.category = macro.category;
-                    macroButton.dataset.text = macro.text;
-                    macroButton.textContent = macro.name;
-                    macroButton.title = macro.text;
-                    macroButton.onclick = function() { toggleMacro(this); };
-                    
-                    // Add to applied macros set if it's already applied
-                    if (macro.applied) {
-                        appliedMacros.add(macro.id);
+                    if (!macrosByCategory[macro.category]) {
+                        macrosByCategory[macro.category] = [];
                     }
-                    
-                    // Set button color based on category
-                    macroButton.style.backgroundColor = getCategoryColor(macro.category);
-                    
-                    macrosList.appendChild(macroButton);
+                    macrosByCategory[macro.category].push(macro);
                 });
                 
-                categorySection.appendChild(macrosList);
-                macrosContainer.appendChild(categorySection);
-            }
-            
-            if (Object.keys(macrosByCategory).length === 0) {
-                macrosContainer.innerHTML = '<div class="no-macros-message">No macros available for this rubric</div>';
+                // Create a section for each category
+                for (const [category, categoryMacros] of Object.entries(macrosByCategory)) {
+                    const categorySection = document.createElement('div');
+                    categorySection.className = 'macro-category';
+                    categorySection.innerHTML = `<h5>${category.charAt(0).toUpperCase() + category.slice(1)}</h5>`;
+                    
+                    const macrosList = document.createElement('div');
+                    macrosList.className = 'macro-buttons';
+                    
+                    categoryMacros.forEach(macro => {
+                        const macroButton = document.createElement('button');
+                        macroButton.className = `macro-button ${macro.applied ? 'active' : ''}`;
+                        macroButton.dataset.id = macro.id;
+                        macroButton.dataset.category = macro.category;
+                        macroButton.dataset.text = macro.text;
+                        macroButton.textContent = macro.name;
+                        macroButton.title = macro.text;
+                        macroButton.onclick = function() { toggleMacro(this); };
+                        
+                        if (macro.applied) {
+                            appliedMacros.add(macro.id);
+                        }
+                        
+                        macroButton.style.backgroundColor = getCategoryColor(macro.category);
+                        macrosList.appendChild(macroButton);
+                    });
+                    
+                    categorySection.appendChild(macrosList);
+                    container.appendChild(categorySection);
+                }
             }
         } catch (error) {
             console.error('Error loading macros:', error);
-            document.getElementById('macroButtonsContainer').innerHTML = 
-                `<div class="error-message">Error loading macros: ${error.message}</div>`;
+            alert('Error loading macros: ' + error.message);
         }
     }
 
@@ -1011,21 +1254,72 @@
         const macroId = button.dataset.id;
         const isActive = button.classList.contains('active');
         
-        if (isActive) {
-            // Remove from applied macros
-            appliedMacros.delete(parseInt(macroId));
-            button.classList.remove('active');
-        } else {
-            // Add to applied macros
-            appliedMacros.add(parseInt(macroId));
-            button.classList.add('active');
+        try {
+            console.log('Starting toggleMacro with button:', button);
+            console.log('Macro ID:', macroId);
+            console.log('Is active:', isActive);
+            
+            const response = await fetch(`/toggle_macro/{{ file_hash }}/${macroId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to toggle macro');
+            }
+            
+            // Update button state
+            button.classList.toggle('active');
+            if (!isActive) {
+                appliedMacros.add(macroId);
+            } else {
+                appliedMacros.delete(macroId);
+            }
+            
+            // Update the core feedback textarea with the macro text
+            const evaluationSection = button.closest('.evaluation-section');
+            console.log('Found evaluation section:', evaluationSection);
+            
+            if (evaluationSection) {
+                const textarea = evaluationSection.querySelector('.core-feedback-textarea');
+                console.log('Found textarea:', textarea);
+                
+                if (textarea) {
+                    const criteriaId = textarea.dataset.criteriaId;
+                    console.log('Criteria ID:', criteriaId);
+                    
+                    const currentText = textarea.value;
+                    const macroText = button.dataset.text;
+                    console.log('Current text:', currentText);
+                    console.log('Macro text:', macroText);
+                    
+                    if (!isActive) {
+                        // Add macro text
+                        textarea.value = currentText + (currentText ? '\n\n' : '') + macroText;
+                    } else {
+                        // Remove macro text
+                        textarea.value = currentText.replace(macroText, '').replace(/\n\s*\n/g, '\n\n').trim();
+                    }
+                    
+                    // Trigger the input event to activate autosave
+                    const event = new Event('input', { bubbles: true });
+                    textarea.dispatchEvent(event);
+                    
+                } else {
+                    console.log('No textarea found in evaluation section');
+                }
+            } else {
+                console.log('No evaluation section found');
+            }
+            
+        } catch (error) {
+            console.error('Error in toggleMacro:', error);
+            console.error('Error stack:', error.stack);
+            alert('Error toggling macro: ' + error.message);
         }
-        
-        // Save the applied macros state
-        await saveAppliedMacros();
-        
-        // We no longer update the feedback text directly
-        // The macros will be combined with core feedback only when sent to the language model
     }
 
     async function saveAppliedMacros() {
@@ -1049,7 +1343,8 @@
         }
     }
 
-    function showAddMacroModal() {
+    function showAddMacroModal(criteriaId) {
+        document.getElementById('macroModal').dataset.criteriaId = criteriaId;
         document.getElementById('macroModal').style.display = 'block';
         resetMacroForm();
     }
@@ -1071,6 +1366,7 @@
         const name = document.getElementById('macroName').value;
         let category = document.getElementById('macroCategory').value;
         const text = document.getElementById('macroText').value;
+        const criteriaId = document.getElementById('macroModal').dataset.criteriaId;
         
         if (category === 'custom') {
             category = document.getElementById('customCategory').value;
@@ -1094,7 +1390,8 @@
                 body: JSON.stringify({
                     name: name,
                     category: category,
-                    text: text
+                    text: text,
+                    criteria_id: criteriaId
                 })
             });
             
@@ -1138,6 +1435,247 @@
             }
         };
     });
+
+    // Add new functions for tab switching
+    function switchTab(tabName) {
+        // Hide all tab contents
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        
+        // Deactivate all tab buttons
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.classList.remove('active');
+        });
+        
+        // Show selected tab content
+        document.getElementById(`${tabName}-tab`).classList.add('active');
+        
+        // Activate selected tab button
+        event.target.classList.add('active');
+    }
+
+    // Add new functions for moderation
+    async function startModeration() {
+        const button = document.getElementById('startModeration');
+        button.disabled = true;
+        button.textContent = 'Starting...';
+        
+        try {
+            const response = await fetch('/start_moderation/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: document.getElementById('moderationModelSelect').value
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Show moderation interface
+                document.getElementById('moderationStatus').innerHTML = `
+                    <div class="status-message">
+                        <h4>Moderation in Progress</h4>
+                        <p>Session started at: ${new Date().toLocaleString()}</p>
+                    </div>
+                `;
+                
+                // Show moderation controls
+                document.getElementById('completeModeration').style.display = 'inline-block';
+                document.getElementById('rejectModeration').style.display = 'inline-block';
+                
+                // Start criterion-specific moderation
+                await moderateCriteria();
+            } else {
+                throw new Error(data.error || 'Failed to start moderation');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error starting moderation: ' + error.message);
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Start Moderation';
+        }
+    }
+
+    async function moderateCriteria() {
+        const criterionElements = document.querySelectorAll('.criterion-moderation');
+        
+        for (const element of criterionElements) {
+            const criteriaId = element.dataset.criteriaId;
+            const resultBox = element.querySelector('.moderation-result-box');
+            const actionsDiv = element.querySelector('.moderation-actions');
+            
+            try {
+                const response = await fetch(`/moderate_criterion/{{ file_hash }}/${criteriaId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: document.getElementById('moderationModelSelect').value
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    // Update result box with PASSES/FAILS status
+                    resultBox.innerHTML = data.result;
+                    resultBox.className = 'moderation-result-box ' + data.result.toLowerCase();
+                    
+                    // Show accept/reject buttons
+                    actionsDiv.style.display = 'flex';
+                } else {
+                    throw new Error(data.error || 'Failed to moderate criterion');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultBox.innerHTML = 'Error: ' + error.message;
+                resultBox.className = 'moderation-result-box fails';
+            }
+        }
+    }
+
+    async function acceptCriterionChanges(criteriaId) {
+        try {
+            const response = await fetch(`/accept_criterion_changes/{{ file_hash }}/${criteriaId}`, {
+                method: 'POST'
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Update the criterion's feedback with the moderated version
+                const criterionElement = document.querySelector(`.criterion-moderation[data-criteria-id="${criteriaId}"]`);
+                const actionsDiv = criterionElement.querySelector('.moderation-actions');
+                actionsDiv.style.display = 'none';
+                
+                // Update the core feedback textarea if it exists
+                const textarea = document.getElementById(`core-feedback-${criteriaId}`);
+                if (textarea && data.moderated_feedback) {
+                    textarea.value = data.moderated_feedback;
+                }
+            } else {
+                throw new Error(data.error || 'Failed to accept changes');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error accepting changes: ' + error.message);
+        }
+    }
+
+    async function rejectCriterionChanges(criteriaId) {
+        try {
+            const response = await fetch(`/reject_criterion_changes/{{ file_hash }}/${criteriaId}`, {
+                method: 'POST'
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Hide the actions div
+                const criterionElement = document.querySelector(`.criterion-moderation[data-criteria-id="${criteriaId}"]`);
+                const actionsDiv = criterionElement.querySelector('.moderation-actions');
+                actionsDiv.style.display = 'none';
+                
+                // Update result box to show rejected status
+                const resultBox = criterionElement.querySelector('.moderation-result-box');
+                resultBox.innerHTML = 'Moderation rejected';
+                resultBox.className = 'moderation-result-box';
+            } else {
+                throw new Error(data.error || 'Failed to reject changes');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error rejecting changes: ' + error.message);
+        }
+    }
+
+    async function completeModeration() {
+        if (!confirm('Are you sure you want to accept all moderated feedback? This will apply all pending changes.')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/complete_moderation/{{ file_hash }}', {
+                method: 'POST'
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Update all criterion feedback with moderated versions
+                if (data.moderated_feedback) {
+                    for (const [criteriaId, feedback] of Object.entries(data.moderated_feedback)) {
+                        const textarea = document.getElementById(`core-feedback-${criteriaId}`);
+                        if (textarea) {
+                            textarea.value = feedback;
+                        }
+                    }
+                }
+                
+                // Update status
+                document.getElementById('moderationStatus').innerHTML = `
+                    <div class="status-message success">
+                        <h4>Moderation Completed</h4>
+                        <p>All changes accepted at: ${new Date().toLocaleString()}</p>
+                    </div>
+                `;
+                
+                // Hide all moderation controls
+                document.getElementById('completeModeration').style.display = 'none';
+                document.getElementById('rejectModeration').style.display = 'none';
+                document.querySelectorAll('.moderation-actions').forEach(div => {
+                    div.style.display = 'none';
+                });
+            } else {
+                throw new Error(data.error || 'Failed to complete moderation');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error completing moderation: ' + error.message);
+        }
+    }
+
+    async function rejectModeration() {
+        if (!confirm('Are you sure you want to reject all moderated feedback? This will discard all pending changes.')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/reject_moderation/{{ file_hash }}', {
+                method: 'POST'
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Update status
+                document.getElementById('moderationStatus').innerHTML = `
+                    <div class="status-message warning">
+                        <h4>Moderation Rejected</h4>
+                        <p>All changes rejected at: ${new Date().toLocaleString()}</p>
+                    </div>
+                `;
+                
+                // Hide all moderation controls
+                document.getElementById('completeModeration').style.display = 'none';
+                document.getElementById('rejectModeration').style.display = 'none';
+                document.querySelectorAll('.moderation-actions').forEach(div => {
+                    div.style.display = 'none';
+                });
+                
+                // Update all result boxes
+                document.querySelectorAll('.moderation-result-box').forEach(box => {
+                    box.innerHTML = 'Moderation rejected';
+                    box.className = 'moderation-result-box';
+                });
+            } else {
+                throw new Error(data.error || 'Failed to reject moderation');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error rejecting moderation: ' + error.message);
+        }
+    }
     </script>
 
     <!-- Macro Modal -->
