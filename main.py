@@ -208,7 +208,7 @@ def paper(file_hash):
     criterion_feedback = {}
     if saved_feedback:
         for cf in saved_feedback.criterion_feedback:
-            criterion_feedback[cf.criteria_id] = cf.feedback_text
+            criterion_feedback[cf.criteria_id] = cf
     
     # Format evaluations for template
     md = markdown.Markdown(extensions=['extra'])
@@ -232,7 +232,8 @@ def paper(file_hash):
                     'criteria_id': eval.criteria_id,
                     'section_name': criteria.section_name,
                     'evaluation_text': eval.evaluation_text,
-                    'core_feedback': criterion_feedback.get(eval.criteria_id, '')
+                    'weight': criteria.weight,
+                    'core_feedback': criterion_feedback.get(eval.criteria_id, '').feedback_text if criterion_feedback.get(eval.criteria_id) else ''
                 })
     
     # Get chat history
@@ -292,7 +293,8 @@ def paper(file_hash):
                          pdf_path=paper.pdf_path.replace('static/', ''),
                          upload_time=upload_time.isoformat(),
                          average_time=average_time,
-                         moderation_session=moderation_session)
+                         moderation_session=moderation_session,
+                         criterion_feedback=criterion_feedback)
 
 # Initialize the service with API clients
 llm_service = LLMService(
@@ -419,7 +421,8 @@ def save_rubric():
             new_criterion = RubricCriteria(
                 rubric_id=rubric.id,
                 section_name=criterion['name'],
-                criteria_text=criterion['description']
+                criteria_text=criterion['description'],
+                weight=float(criterion['weight'])
             )
             db.session.add(new_criterion)
         
@@ -445,7 +448,11 @@ def get_rubric(rubric_id):
                 "description": rubric.description
             },
             "criteria": [
-                {"section_name": c.section_name, "criteria_text": c.criteria_text} 
+                {
+                    "section_name": c.section_name, 
+                    "criteria_text": c.criteria_text,
+                    "weight": c.weight
+                } 
                 for c in criteria
             ]
         })
@@ -458,29 +465,73 @@ def get_rubric(rubric_id):
 def save_mark(file_hash):
     try:
         data = request.json
-        mark = data['mark']
+        overall_mark = data['mark']
+        criterion_marks = data.get('criterion_marks', [])
         
-        if not (0 <= mark <= 100):
-            return jsonify({"success": False, "error": "Mark must be between 0 and 100"})
+        # Validate overall mark
+        if overall_mark is None:
+            return jsonify({"success": False, "error": "Mark cannot be None"})
+        
+        # Ensure mark is a valid number between 0 and 100
+        try:
+            overall_mark = float(overall_mark)
+            if not (0 <= overall_mark <= 100):
+                return jsonify({"success": False, "error": "Mark must be between 0 and 100"})
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "error": "Invalid mark value"})
         
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
         saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
         
         if saved_feedback:
-            saved_feedback.mark = mark
+            saved_feedback.mark = overall_mark
             saved_feedback.updated_at = datetime.now()
         else:
             saved_feedback = SavedFeedback(
                 paper_id=paper.id,
-                mark=mark
+                mark=overall_mark
             )
             db.session.add(saved_feedback)
+            db.session.flush()  # Get the saved_feedback ID
+        
+        # Save criterion-specific marks
+        for criterion_mark in criterion_marks:
+            # Validate criterion mark
+            criteria_id = criterion_mark.get('criteria_id')
+            mark_value = criterion_mark.get('mark')
+            
+            if criteria_id is None or mark_value is None:
+                continue  # Skip invalid entries
+            
+            try:
+                mark_value = float(mark_value)
+                if not (0 <= mark_value <= 100):
+                    continue  # Skip out-of-range marks
+            except (ValueError, TypeError):
+                continue  # Skip non-numeric marks
+            
+            criterion_feedback = CriterionFeedback.query.filter_by(
+                saved_feedback_id=saved_feedback.id,
+                criteria_id=criteria_id
+            ).first()
+            
+            if criterion_feedback:
+                criterion_feedback.mark = mark_value
+                criterion_feedback.updated_at = datetime.now()
+            else:
+                criterion_feedback = CriterionFeedback(
+                    saved_feedback_id=saved_feedback.id,
+                    criteria_id=criteria_id,
+                    mark=mark_value
+                )
+                db.session.add(criterion_feedback)
         
         db.session.commit()
         return jsonify({"success": True})
     
     except Exception as e:
         db.session.rollback()
+        app.logger.error(f"Error in save_mark: {str(e)}")
         return jsonify({"success": False, "error": str(e)})
 
 
@@ -1392,6 +1443,120 @@ def toggle_macro(file_hash, macro_id):
             'success': False,
             'error': str(e)
         }), 500
+
+@app.route('/export_rubric/<int:rubric_id>')
+@login_required
+def export_rubric(rubric_id):
+    try:
+        rubric = Rubric.query.get_or_404(rubric_id)
+        criteria = RubricCriteria.query.filter_by(rubric_id=rubric_id).order_by(RubricCriteria.id).all()
+        
+        # Create a dictionary with all rubric data including weights
+        rubric_data = {
+            "name": rubric.name,
+            "description": rubric.description,
+            "criteria": [
+                {
+                    "section_name": c.section_name,
+                    "criteria_text": c.criteria_text,
+                    "weight": c.weight
+                }
+                for c in criteria
+            ]
+        }
+        
+        return jsonify({
+            "success": True,
+            "rubric": rubric_data
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/import_rubric', methods=['POST'])
+@login_required
+def import_rubric():
+    try:
+        data = request.json
+        rubric_data = data['rubric']
+        
+        # Validate required fields
+        if not rubric_data.get('name') or not rubric_data.get('description') or not rubric_data.get('criteria'):
+            return jsonify({"success": False, "error": "Missing required rubric data"})
+        
+        # Create new rubric
+        rubric = Rubric(
+            name=rubric_data['name'],
+            description=rubric_data['description']
+        )
+        db.session.add(rubric)
+        db.session.flush()  # Get the rubric_id
+        
+        # Add criteria with weights
+        total_weight = 0
+        criteria_list = []
+        
+        for criterion_data in rubric_data['criteria']:
+            if not criterion_data.get('section_name') or not criterion_data.get('criteria_text'):
+                continue
+                
+            # Get weight from data or use default
+            weight = float(criterion_data.get('weight', 1.0))
+            total_weight += weight
+            
+            criterion = RubricCriteria(
+                rubric_id=rubric.id,
+                section_name=criterion_data['section_name'],
+                criteria_text=criterion_data['criteria_text'],
+                weight=weight
+            )
+            criteria_list.append(criterion)
+            db.session.add(criterion)
+        
+        # Validate total weight is close to 1
+        if abs(total_weight - 1) > 0.0001:
+            return jsonify({
+                "success": False, 
+                "error": f"Total weight must be 1.0 (current sum: {total_weight:.4f})"
+            })
+        
+        db.session.commit()
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/save_macro_from_paper/<file_hash>', methods=['POST'])
+@login_required
+def save_macro_from_paper(file_hash):
+    try:
+        data = request.json
+        name = data['name']
+        category = data['category']
+        text = data['text']
+        criteria_id = data['criteria_id']
+        
+        # Get the rubric_id from the criteria
+        criteria = RubricCriteria.query.get_or_404(criteria_id)
+        rubric_id = criteria.rubric_id
+        
+        # Create new macro
+        macro = FeedbackMacro(
+            name=name,
+            category=category,
+            text=text,
+            criteria_id=criteria_id,
+            rubric_id=rubric_id  # Add the rubric_id
+        )
+        db.session.add(macro)
+        db.session.commit()
+        
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error saving macro: {str(e)}")
+        return jsonify({"success": False, "error": str(e)})
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")

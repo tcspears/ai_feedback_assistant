@@ -92,6 +92,10 @@
                         <div class="criteria-fields-container">
                             <input type="text" class="criteria-name-input" placeholder="Section name (e.g., Overall Quality)" required>
                             <textarea class="criteria-input" placeholder="Enter grading criteria..." required rows="3"></textarea>
+                            <div class="weight-input-container">
+                                <label>Weight:</label>
+                                <input type="number" class="criteria-weight-input" min="0" max="1" step="0.01" value="1.0" required>
+                            </div>
                         </div>
                         <button type="button" class="remove-criteria" onclick="removeCriteria(this)">-</button>
                     </div>
@@ -129,14 +133,19 @@
         let currentRubricId = null;
 
         async function loadRubric(rubricId) {
-            if (!rubricId) return;
+            // Convert rubricId to number and handle empty string
+            const id = rubricId ? parseInt(rubricId) : null;
+            if (!id) {
+                currentRubricId = null;
+                return;
+            }
             
             try {
-                const response = await fetch(`/get_rubric/${rubricId}`);
+                const response = await fetch(`/get_rubric/${id}`);
                 const data = await response.json();
                 
                 if (data.success) {
-                    currentRubricId = rubricId;
+                    currentRubricId = id;  // Set the current rubric ID
                     
                     document.getElementById('rubricName').value = data.rubric.name;
                     document.getElementById('assignmentDescription').value = data.rubric.description;
@@ -151,14 +160,22 @@
                             <div class="criteria-fields-container">
                                 <input type="text" class="criteria-name-input" placeholder="Section name (e.g., Overall Quality)" required value="${criterion.section_name}">
                                 <textarea class="criteria-input" placeholder="Enter grading criteria..." required rows="3">${criterion.criteria_text}</textarea>
+                                <div class="weight-input-container">
+                                    <label>Weight:</label>
+                                    <input type="number" class="criteria-weight-input" min="0" max="1" step="0.01" value="${criterion.weight}" required>
+                                </div>
                             </div>
                             <button type="button" class="remove-criteria" onclick="removeCriteria(this)">-</button>
                         `;
                         container.appendChild(newEntry);
                     });
+                } else {
+                    currentRubricId = null;
+                    alert('Error loading rubric');
                 }
             } catch (error) {
                 console.error('Error loading rubric:', error);
+                currentRubricId = null;
                 alert('Error loading rubric');
             }
         }
@@ -171,6 +188,10 @@
                 <div class="criteria-fields-container">
                     <input type="text" class="criteria-name-input" placeholder="Section name (e.g., Overall Quality)" required>
                     <textarea class="criteria-input" placeholder="Enter grading criteria..." required rows="3"></textarea>
+                    <div class="weight-input-container">
+                        <label>Weight:</label>
+                        <input type="number" class="criteria-weight-input" min="0" max="1" step="0.01" value="1.0" required>
+                    </div>
                 </div>
                 <button type="button" class="remove-criteria" onclick="removeCriteria(this)">-</button>
             `;
@@ -190,11 +211,19 @@
             const criteriaEntries = document.getElementsByClassName('criteria-entry');
             const criteria = Array.from(criteriaEntries).map(entry => ({
                 name: entry.querySelector('.criteria-name-input').value,
-                description: entry.querySelector('.criteria-input').value
+                description: entry.querySelector('.criteria-input').value,
+                weight: parseFloat(entry.querySelector('.criteria-weight-input').value)
             }));
 
             if (!name || !description || criteria.some(c => !c.name || !c.description)) {
                 alert('Please fill in all fields');
+                return;
+            }
+
+            // Check if weights sum to approximately 1
+            const totalWeight = criteria.reduce((sum, c) => sum + c.weight, 0);
+            if (Math.abs(totalWeight - 1) > 0.0001) {  // Allow for very small floating point differences
+                alert(`Criterion weights must sum to 1.0 (current sum: ${totalWeight.toFixed(4)})`);
                 return;
             }
 
@@ -246,7 +275,7 @@
                     window.URL.revokeObjectURL(url);
                     document.body.removeChild(a);
                 } else {
-                    alert('Error exporting rubric');
+                    alert('Error exporting rubric: ' + (data.error || 'Unknown error'));
                 }
             } catch (error) {
                 console.error('Error exporting rubric:', error);
