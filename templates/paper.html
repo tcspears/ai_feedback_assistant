@@ -436,6 +436,41 @@
             color: #dc3545;
         }
         
+        .moderation-result-box .result-status {
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .moderation-result-box .mark-info {
+            text-align: center;
+            font-size: 14px;
+            margin-top: 5px;
+            font-weight: normal;
+            color: var(--text-color);
+        }
+        
+        .moderation-reasoning {
+            margin-top: 10px;
+            padding: 15px;
+            background-color: rgba(0, 0, 0, 0.05);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .moderation-reasoning h5 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: var(--text-color);
+        }
+        
+        .reasoning-content {
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--text-color);
+        }
+        
         .moderation-actions {
             display: flex;
             gap: 10px;
@@ -540,6 +575,53 @@
             border-radius: 4px;
             background-color: var(--summary-bg);
             color: var(--text-color);
+        }
+        
+        .status-message {
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .status-message.success {
+            background-color: rgba(40, 167, 69, 0.1);
+            border-color: #28a745;
+        }
+        
+        .status-message.error {
+            background-color: rgba(220, 53, 69, 0.1);
+            border-color: #dc3545;
+        }
+        
+        .status-message h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        
+        .status-message p {
+            margin: 5px 0;
+        }
+        
+        .moderation-info-box {
+            background-color: rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .moderation-info-box p {
+            margin: 0 0 10px 0;
+        }
+        
+        .moderation-info-box ul {
+            margin: 0 0 10px 20px;
+            padding: 0;
+        }
+        
+        .moderation-info-box li {
+            margin-bottom: 5px;
         }
     </style>
 </head>
@@ -692,6 +774,17 @@
                     <div class="moderation-section">
                         <h3>Feedback Moderation</h3>
                         
+                        <div class="moderation-info-box">
+                            <p>This tab evaluates your feedback against academic standards using AI. Each criterion will be assessed for:</p>
+                            <ul>
+                                <li>Alignment with the rubric criteria</li>
+                                <li>Appropriateness for the given mark</li>
+                                <li>Quality of examples and justification</li>
+                                <li>Academic language and clarity</li>
+                            </ul>
+                            <p>Results will show whether each criterion's feedback PASSES or FAILS the assessment with detailed reasoning.</p>
+                        </div>
+                        
                         <!-- Model Selection -->
                         <div class="model-select-container">
                             <select id="moderationModelSelect">
@@ -706,8 +799,6 @@
                         <!-- Moderation Controls -->
                         <div class="moderation-controls">
                             <button id="startModeration" onclick="startModeration()">Start Moderation</button>
-                            <button id="completeModeration" style="display: none;" onclick="completeModeration()">Accept All Changes</button>
-                            <button id="rejectModeration" style="display: none;" onclick="rejectModeration()">Reject All Changes</button>
                         </div>
 
                         <!-- Moderation Status -->
@@ -721,9 +812,9 @@
                                 <div class="moderation-result-box">
                                     <div class="result-status">Pending moderation...</div>
                                 </div>
-                                <div class="moderation-actions" style="display: none;">
-                                    <button class="accept-changes" onclick="acceptCriterionChanges('{{ evaluation.criteria_id }}')">Accept</button>
-                                    <button class="reject-changes" onclick="rejectCriterionChanges('{{ evaluation.criteria_id }}')">Reject</button>
+                                <div class="moderation-reasoning" style="display:none;">
+                                    <h5>Reasoning:</h5>
+                                    <div class="reasoning-content"></div>
                                 </div>
                             </div>
                             {% endfor %}
@@ -899,6 +990,11 @@
 
         // Calculate the weighted mark on page load
         setTimeout(calculateAndShowWeightedMark, 500);
+        
+        // Check if we're on the moderation tab and load results if so
+        if (document.getElementById('moderation-tab').classList.contains('active')) {
+            loadModerationResults();
+        }
     });
 
     function sendMessage() {
@@ -1615,6 +1711,63 @@
         
         // Activate selected tab button
         event.target.classList.add('active');
+        
+        // Load moderation results if switching to moderation tab
+        if (tabName === 'moderation') {
+            loadModerationResults();
+        }
+    }
+
+    // Function to load existing moderation results
+    async function loadModerationResults() {
+        try {
+            const response = await fetch(`/get_moderation_feedback/{{ file_hash }}`);
+            const data = await response.json();
+            
+            console.log("Loaded moderation data:", data);
+            
+            if (data.success) {
+                // If there are moderation results, display them
+                if (data.results && Object.keys(data.results).length > 0) {
+                    // Update status to show existing moderation
+                    document.getElementById('moderationStatus').innerHTML = `
+                        <div class="status-message success">
+                            <h4>Previous Moderation Results</h4>
+                            <p>These results were saved from a previous moderation session.</p>
+                        </div>
+                    `;
+                    
+                    // Update each criterion with its result
+                    for (const [criteriaId, result] of Object.entries(data.results)) {
+                        const element = document.querySelector(`.criterion-moderation[data-criteria-id="${criteriaId}"]`);
+                        if (element) {
+                            const resultBox = element.querySelector('.moderation-result-box');
+                            const reasoningDiv = element.querySelector('.moderation-reasoning');
+                            
+                            // Update result box
+                            const criterionMark = getCriterionMark(criteriaId);
+                            const resultDisplay = `
+                                <div class="result-status">${result.result}</div>
+                                ${criterionMark ? `<div class="mark-info">Mark: ${criterionMark}%</div>` : ''}
+                            `;
+                            resultBox.innerHTML = resultDisplay;
+                            resultBox.className = 'moderation-result-box ' + result.result.toLowerCase();
+                            
+                            // Update reasoning if available
+                            if (result.reasoning) {
+                                reasoningDiv.style.display = 'block';
+                                reasoningDiv.querySelector('.reasoning-content').textContent = result.reasoning;
+                            }
+                        }
+                    }
+                    
+                    // Update button text to indicate we can rerun moderation
+                    document.getElementById('startModeration').textContent = 'Run New Moderation';
+                }
+            }
+        } catch (error) {
+            console.error('Error loading moderation results:', error);
+        }
     }
 
     // Add new functions for moderation
@@ -1622,6 +1775,16 @@
         const button = document.getElementById('startModeration');
         button.disabled = true;
         button.textContent = 'Starting...';
+        
+        // Reset all moderation result boxes
+        document.querySelectorAll('.criterion-moderation').forEach(element => {
+            const resultBox = element.querySelector('.moderation-result-box');
+            const reasoningDiv = element.querySelector('.moderation-reasoning');
+            
+            resultBox.innerHTML = `<div class="result-status">Pending moderation...</div>`;
+            resultBox.className = 'moderation-result-box';
+            reasoningDiv.style.display = 'none';
+        });
         
         try {
             const response = await fetch('/start_moderation/{{ file_hash }}', {
@@ -1644,21 +1807,35 @@
                     </div>
                 `;
                 
-                // Show moderation controls
-                document.getElementById('completeModeration').style.display = 'inline-block';
-                document.getElementById('rejectModeration').style.display = 'inline-block';
-                
                 // Start criterion-specific moderation
                 await moderateCriteria();
+                
+                // Update status to show completion
+                document.getElementById('moderationStatus').innerHTML = `
+                    <div class="status-message success">
+                        <h4>Moderation Completed</h4>
+                        <p>Completed at: ${new Date().toLocaleString()}</p>
+                        <p>Review the results above for each criterion.</p>
+                    </div>
+                `;
+                
+                // Update button state
+                button.textContent = 'Run New Moderation';
             } else {
                 throw new Error(data.error || 'Failed to start moderation');
             }
         } catch (error) {
             console.error('Error:', error);
             alert('Error starting moderation: ' + error.message);
+            // Update status to show error
+            document.getElementById('moderationStatus').innerHTML = `
+                <div class="status-message error">
+                    <h4>Moderation Failed</h4>
+                    <p>Error: ${error.message}</p>
+                </div>
+            `;
         } finally {
             button.disabled = false;
-            button.textContent = 'Start Moderation';
         }
     }
 
@@ -1668,9 +1845,13 @@
         for (const element of criterionElements) {
             const criteriaId = element.dataset.criteriaId;
             const resultBox = element.querySelector('.moderation-result-box');
-            const actionsDiv = element.querySelector('.moderation-actions');
+            const reasoningDiv = element.querySelector('.moderation-reasoning');
             
             try {
+                // Update UI to show moderation is in progress
+                resultBox.innerHTML = `<div class="result-status">Moderating...</div>`;
+                resultBox.className = 'moderation-result-box';
+                
                 const response = await fetch(`/moderate_criterion/{{ file_hash }}/${criteriaId}`, {
                     method: 'POST',
                     headers: {
@@ -1682,160 +1863,36 @@
                 });
                 
                 const data = await response.json();
+                // Debug log
+                console.log(`Moderation response for criterion ${criteriaId}:`, data);
+                
                 if (data.success) {
                     // Update result box with PASSES/FAILS status
-                    resultBox.innerHTML = data.result;
+                    const criterionMark = getCriterionMark(criteriaId);
+                    const resultDisplay = `
+                        <div class="result-status">${data.result}</div>
+                        ${criterionMark ? `<div class="mark-info">Mark: ${criterionMark}%</div>` : ''}
+                    `;
+                    resultBox.innerHTML = resultDisplay;
                     resultBox.className = 'moderation-result-box ' + data.result.toLowerCase();
                     
-                    // Show accept/reject buttons
-                    actionsDiv.style.display = 'flex';
+                    // Show reasoning
+                    reasoningDiv.style.display = 'block';
+                    reasoningDiv.querySelector('.reasoning-content').textContent = data.reasoning;
                 } else {
                     throw new Error(data.error || 'Failed to moderate criterion');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                resultBox.innerHTML = 'Error: ' + error.message;
+                resultBox.innerHTML = `<div class="result-status">Error: ${error.message}</div>
+                                    <div class="error-details" style="margin-top: 5px; font-size: 12px; font-weight: normal;">
+                                        Please try again or use a different model. Check browser console for details.
+                                    </div>`;
                 resultBox.className = 'moderation-result-box fails';
+                
+                // Hide reasoning div in case of error
+                reasoningDiv.style.display = 'none';
             }
-        }
-    }
-
-    async function acceptCriterionChanges(criteriaId) {
-        try {
-            const response = await fetch(`/accept_criterion_changes/{{ file_hash }}/${criteriaId}`, {
-                method: 'POST'
-            });
-            
-            const data = await response.json();
-            if (data.success) {
-                // Update the criterion's feedback with the moderated version
-                const criterionElement = document.querySelector(`.criterion-moderation[data-criteria-id="${criteriaId}"]`);
-                const actionsDiv = criterionElement.querySelector('.moderation-actions');
-                actionsDiv.style.display = 'none';
-                
-                // Update the feedback textarea if it exists
-                const textarea = document.getElementById(`feedback-${criteriaId}`);
-                if (textarea && data.moderated_feedback) {
-                    textarea.value = data.moderated_feedback;
-                }
-            } else {
-                throw new Error(data.error || 'Failed to accept changes');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error accepting changes: ' + error.message);
-        }
-    }
-
-    async function rejectCriterionChanges(criteriaId) {
-        try {
-            const response = await fetch(`/reject_criterion_changes/{{ file_hash }}/${criteriaId}`, {
-                method: 'POST'
-            });
-            
-            const data = await response.json();
-            if (data.success) {
-                // Hide the actions div
-                const criterionElement = document.querySelector(`.criterion-moderation[data-criteria-id="${criteriaId}"]`);
-                const actionsDiv = criterionElement.querySelector('.moderation-actions');
-                actionsDiv.style.display = 'none';
-                
-                // Update result box to show rejected status
-                const resultBox = criterionElement.querySelector('.moderation-result-box');
-                resultBox.innerHTML = 'Moderation rejected';
-                resultBox.className = 'moderation-result-box';
-            } else {
-                throw new Error(data.error || 'Failed to reject changes');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error rejecting changes: ' + error.message);
-        }
-    }
-
-    async function completeModeration() {
-        if (!confirm('Are you sure you want to accept all moderated feedback? This will apply all pending changes.')) {
-            return;
-        }
-        
-        try {
-            const response = await fetch('/complete_moderation/{{ file_hash }}', {
-                method: 'POST'
-            });
-            
-            const data = await response.json();
-            if (data.success) {
-                // Update all criterion feedback with moderated versions
-                if (data.moderated_feedback) {
-                    for (const [criteriaId, feedback] of Object.entries(data.moderated_feedback)) {
-                        const textarea = document.getElementById(`feedback-${criteriaId}`);
-                        if (textarea) {
-                            textarea.value = feedback;
-                        }
-                    }
-                }
-                
-                // Update status
-                document.getElementById('moderationStatus').innerHTML = `
-                    <div class="status-message success">
-                        <h4>Moderation Completed</h4>
-                        <p>All changes accepted at: ${new Date().toLocaleString()}</p>
-                    </div>
-                `;
-                
-                // Hide all moderation controls
-                document.getElementById('completeModeration').style.display = 'none';
-                document.getElementById('rejectModeration').style.display = 'none';
-                document.querySelectorAll('.moderation-actions').forEach(div => {
-                    div.style.display = 'none';
-                });
-            } else {
-                throw new Error(data.error || 'Failed to complete moderation');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error completing moderation: ' + error.message);
-        }
-    }
-
-    async function rejectModeration() {
-        if (!confirm('Are you sure you want to reject all moderated feedback? This will discard all pending changes.')) {
-            return;
-        }
-        
-        try {
-            const response = await fetch('/reject_moderation/{{ file_hash }}', {
-                method: 'POST'
-            });
-            
-            const data = await response.json();
-            if (data.success) {
-                // Update status
-                document.getElementById('moderationStatus').innerHTML = `
-                    <div class="status-message warning">
-                        <h4>Moderation Rejected</h4>
-                        <p>All changes rejected at: ${new Date().toLocaleString()}</p>
-                    </div>
-                `;
-                
-                // Hide all moderation controls
-                document.getElementById('completeModeration').style.display = 'none';
-                document.getElementById('rejectModeration').style.display = 'none';
-                document.querySelectorAll('.moderation-actions').forEach(div => {
-                    div.style.display = 'none';
-                });
-                
-                // Update all result boxes
-                document.querySelectorAll('.moderation-result-box').forEach(box => {
-                    box.innerHTML = 'Moderation rejected';
-                    box.className = 'moderation-result-box';
-                });
-            } else {
-                throw new Error(data.error || 'Failed to reject moderation');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error rejecting moderation: ' + error.message);
         }
     }
 
@@ -2012,6 +2069,15 @@
             console.error(`Error saving criterion mark: ${error.message}`);
             alert(`Error saving mark: ${error.message}`);
         }
+    }
+
+    function getCriterionMark(criteriaId) {
+        const markInput = document.querySelector(`.criterion-mark-input[data-criteria-id="${criteriaId}"]`);
+        if (markInput) {
+            const mark = parseFloat(markInput.value);
+            return !isNaN(mark) ? mark.toFixed(1) : null;
+        }
+        return null;
     }
     </script>
 

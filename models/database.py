@@ -127,6 +127,7 @@ class ModerationResult(db.Model):
     session_id = db.Column(db.Integer, db.ForeignKey('moderation_sessions.id'), nullable=False)
     criteria_id = db.Column(db.Integer, db.ForeignKey('rubric_criteria.id'), nullable=False)
     result = db.Column(db.String(10), nullable=False)  # PASSES or FAILS
+    reasoning = db.Column(db.Text)  # The reasoning behind the PASSES or FAILS decision
     moderated_feedback = db.Column(db.Text)  # The suggested feedback after moderation
     created_at = db.Column(db.DateTime, nullable=False, default=func.now())
     # Add relationship to criteria

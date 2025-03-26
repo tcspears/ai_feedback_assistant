@@ -42,6 +42,7 @@ from models.database import (
 from utils.prompt_builder import StructuredPrompt
 from utils.prompt_loader import PromptLoader
 from sqlalchemy import or_
+import traceback
 
 def adapt_datetime(ts):
     return ts.isoformat()
@@ -1025,6 +1026,7 @@ def get_moderation_feedback(file_hash):
         results = {
             result.criteria_id: {
                 'result': result.result,
+                'reasoning': result.reasoning,
                 'moderated_feedback': result.moderated_feedback
             }
             for result in moderation_session.results
@@ -1120,6 +1122,7 @@ def moderate_criterion(file_hash, criteria_id):
         # Get the model from request
         data = request.get_json()
         model = data.get('model', 'gpt-4o')
+        app.logger.info(f"Starting moderation for criterion {criteria_id} using model {model}")
 
         # Get paper and criterion details
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
@@ -1128,6 +1131,7 @@ def moderate_criterion(file_hash, criteria_id):
         # Get saved feedback
         saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
         if not saved_feedback:
+            app.logger.error("No saved feedback found for paper")
             return jsonify({'success': False, 'error': 'No saved feedback found'})
             
         criterion_feedback = CriterionFeedback.query.filter_by(
@@ -1136,6 +1140,7 @@ def moderate_criterion(file_hash, criteria_id):
         ).first()
         
         if not criterion_feedback:
+            app.logger.error("No criterion feedback found")
             return jsonify({'success': False, 'error': 'No criterion feedback found'})
 
         # Get or create moderation session
@@ -1145,6 +1150,7 @@ def moderate_criterion(file_hash, criteria_id):
                             .first())
                             
         if not moderation_session or moderation_session.status != 'pending':
+            app.logger.info("Creating new moderation session")
             moderation_session = ModerationSession(
                 paper_id=paper.id,
                 original_feedback=saved_feedback.consolidated_feedback,
@@ -1153,26 +1159,107 @@ def moderate_criterion(file_hash, criteria_id):
             db.session.add(moderation_session)
             db.session.flush()  # Get the session ID
 
+        # Get grade descriptors from database
+        grade_descriptors = GradeDescriptors.query.order_by(GradeDescriptors.range_start.desc()).all()
+        
+        # Format grade descriptors as text
+        grade_descriptors_text = ""
+        if grade_descriptors:
+            grade_descriptors_text = "Grade Descriptors:\n"
+            for descriptor in grade_descriptors:
+                grade_descriptors_text += f"{descriptor.range_start}-{descriptor.range_end}%: {descriptor.descriptor_text}\n"
+        else:
+            grade_descriptors_text = "No grade descriptors available."
+        
+        # Get more detailed information about the rubric this criterion belongs to
+        rubric = None
+        if criterion.rubric_id:
+            rubric = Rubric.query.get(criterion.rubric_id)
+
+        # Get all other criteria in the rubric for context
+        related_criteria = []
+        if rubric:
+            related_criteria = RubricCriteria.query.filter_by(rubric_id=rubric.id).all()
+            
+        # Build detailed criterion info
+        criterion_info = f"Criterion: {criterion.section_name}\n\n"
+        criterion_info += f"Description: {criterion.criteria_text}\n\n"
+        
+        # Add rubric context
+        if rubric:
+            criterion_info += f"This criterion is part of the rubric: '{rubric.name}'\n"
+            criterion_info += f"Rubric description: {rubric.description}\n\n"
+            
+        # Add weight information
+        criterion_info += f"This criterion has a weight of {criterion.weight} in the overall assessment.\n"
+            
         # Load the criterion moderation prompt
         prompt_loader = PromptLoader('prompts.yaml')
         prompt, system_msg = prompt_loader.create_prompt('criterion_moderation_prompt')
 
         # Fill in dynamic content
-        prompt.add_section('criterion_info', f"Criterion: {criterion.section_name}\n\nDescription: {criterion.criteria_text}")
+        prompt.add_section('criterion_info', criterion_info)
         prompt.add_section('feedback', criterion_feedback.feedback_text if criterion_feedback else "No feedback provided")
-        prompt.add_section('mark_info', str({'mark': saved_feedback.mark}))
+        prompt.add_section('mark_info', f"The proposed mark for this criterion is: {criterion_feedback.mark if criterion_feedback.mark else saved_feedback.mark}%")
+        prompt.add_section('grade_descriptors', grade_descriptors_text)
 
+        app.logger.info(f"Sending prompt to model {model}")
         # Get moderation result from LLM
         result = llm_service.generate_response(
             model=model,
             messages=[{"role": "user", "content": prompt.build()}],
             system_msg=system_msg
         )
+        app.logger.info(f"Received response from model: {result[:100]}...")
 
-        # Validate result is either PASSES or FAILS
-        result = result.strip().upper()
-        if result not in ['PASSES', 'FAILS']:
-            return jsonify({'success': False, 'error': 'Invalid moderation result'})
+        # Parse the JSON result - first clean up any leading/trailing text that might not be part of the JSON
+        result_text = result.strip()
+        
+        # Try multiple approaches to extract JSON
+        json_extracted = False
+        json_content = None
+        
+        # Approach 1: Find JSON content between ```json and ``` markers
+        json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
+        if json_match:
+            app.logger.info("Found JSON content inside code blocks")
+            json_content = json_match.group(1)
+            json_extracted = True
+        
+        # Approach 2: Find content that looks like a JSON object (between curly braces)
+        if not json_extracted:
+            json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
+            if json_obj_match:
+                app.logger.info("Found JSON-like content between curly braces")
+                json_content = json_obj_match.group(1)
+                json_extracted = True
+        
+        # If we couldn't extract JSON, use the whole response
+        if not json_extracted:
+            app.logger.info("Using entire response as JSON")
+            json_content = result_text
+        
+        app.logger.info(f"Attempting to parse JSON: {json_content}")
+        try:
+            result_json = json.loads(json_content)
+            decision = result_json.get('decision', '').strip().upper()
+            reasoning = result_json.get('reasoning', '').strip()
+            
+            app.logger.info(f"Parsed JSON successfully. Decision: {decision}")
+            
+            # Validate decision is either PASSES or FAILS
+            if decision not in ['PASSES', 'FAILS']:
+                app.logger.error(f"Invalid decision value: {decision}")
+                return jsonify({'success': False, 'error': f'Invalid moderation decision: {decision}'})
+                
+            if not reasoning:
+                app.logger.error("Missing reasoning in result")
+                return jsonify({'success': False, 'error': 'Missing reasoning in moderation result'})
+                
+        except json.JSONDecodeError as e:
+            app.logger.error(f"JSON parse error: {str(e)}")
+            app.logger.error(f"Result text: {result_text}")
+            return jsonify({'success': False, 'error': f'Failed to parse moderation result as JSON: {str(e)}'})
 
         # Store the moderation result
         moderation_result = ModerationResult.query.filter_by(
@@ -1181,27 +1268,34 @@ def moderate_criterion(file_hash, criteria_id):
         ).first()
         
         if not moderation_result:
+            app.logger.info("Creating new moderation result")
             moderation_result = ModerationResult(
                 session_id=moderation_session.id,
                 criteria_id=criteria_id,
-                result=result,
+                result=decision,
+                reasoning=reasoning,
                 moderated_feedback=criterion_feedback.feedback_text
             )
             db.session.add(moderation_result)
         else:
-            moderation_result.result = result
+            app.logger.info("Updating existing moderation result")
+            moderation_result.result = decision
+            moderation_result.reasoning = reasoning
             moderation_result.moderated_feedback = criterion_feedback.feedback_text
         
         db.session.commit()
+        app.logger.info("Moderation completed successfully")
 
         return jsonify({
             'success': True,
-            'result': result
+            'result': decision,
+            'reasoning': reasoning
         })
 
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error in moderate_criterion: {str(e)}")
+        app.logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/accept_criterion_changes/<file_hash>/<criteria_id>', methods=['POST'])
