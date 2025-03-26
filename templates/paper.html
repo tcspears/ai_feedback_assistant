@@ -653,18 +653,16 @@
 
     // Add event listeners properly while maintaining auto-save
     document.addEventListener('DOMContentLoaded', function() {
-        const additionalFeedback = document.getElementById('additionalFeedback');
-        const numericalMark = document.getElementById('numericalMark');
+        // Load macros when the page loads
+        loadMacros();
         
-        // Add event listeners for both inputs
-        additionalFeedback.addEventListener('input', (e) => {
-            checkModerateButton();
-        });
-        
-        numericalMark.addEventListener('input', checkModerateButton);
-        
-        // Initial check
-        checkModerateButton();
+        // Close the modal when clicking outside of it
+        window.onclick = function(event) {
+            const modal = document.getElementById('macroModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        };
     });
 
     function formatTime(seconds) {
@@ -686,7 +684,7 @@
 
     // Update average time every minute
     setInterval(() => {
-        fetch(`/get_average_time/${fileHash}`)
+        fetch(`/get_average_time/{{ file_hash }}`)
             .then(response => response.json())
             .then(data => {
                 if (data.average_time) {
@@ -717,70 +715,45 @@
                 macrosByCriteria[macro.criteria_id].push(macro);
             });
             
-            // Update macro containers for each criterion
-            for (const [criteriaId, macros] of Object.entries(macrosByCriteria)) {
-                const container = document.getElementById(`macroButtonsContainer-${criteriaId}`);
-                if (!container) continue;
-                
-                container.innerHTML = '';
-                
-                // Group macros by category
-                const macrosByCategory = {};
-                macros.forEach(macro => {
-                    if (!macrosByCategory[macro.category]) {
-                        macrosByCategory[macro.category] = [];
-                    }
-                    macrosByCategory[macro.category].push(macro);
-                });
-                
-                // Create a section for each category
-                for (const [category, categoryMacros] of Object.entries(macrosByCategory)) {
-                    const categorySection = document.createElement('div');
-                    categorySection.className = 'macro-category';
-                    categorySection.innerHTML = `<h5>${category.charAt(0).toUpperCase() + category.slice(1)}</h5>`;
-                    
-                    const macrosList = document.createElement('div');
-                    macrosList.className = 'macro-buttons';
-                    
-                    categoryMacros.forEach(macro => {
-                        const macroButton = document.createElement('button');
-                        macroButton.className = `macro-button ${macro.applied ? 'active' : ''}`;
-                        macroButton.dataset.id = macro.id;
-                        macroButton.dataset.category = macro.category;
-                        macroButton.dataset.text = macro.text;
-                        macroButton.textContent = macro.name;
-                        macroButton.title = macro.text;
-                        macroButton.onclick = function() { toggleMacro(this); };
-                        
-                        if (macro.applied) {
-                            appliedMacros.add(macro.id);
-                        }
-                        
-                        macroButton.style.backgroundColor = getCategoryColor(macro.category);
-                        macrosList.appendChild(macroButton);
+            // Update the UI with the macros
+            Object.entries(macrosByCriteria).forEach(([criteriaId, macros]) => {
+                const container = document.querySelector(`[data-criteria-id="${criteriaId}"] .macro-buttons`);
+                if (container) {
+                    container.innerHTML = '';
+                    macros.forEach(macro => {
+                        const button = createMacroButton(macro);
+                        container.appendChild(button);
                     });
-                    
-                    categorySection.appendChild(macrosList);
-                    container.appendChild(categorySection);
                 }
-            }
+            });
+            
+            // Update applied macros set
+            appliedMacros = new Set(data.applied_macros || []);
+            appliedMacros.forEach(macroId => {
+                const button = document.querySelector(`[data-macro-id="${macroId}"]`);
+                if (button) {
+                    button.classList.add('active');
+                }
+            });
+            
         } catch (error) {
             console.error('Error loading macros:', error);
-            alert('Error loading macros: ' + error.message);
         }
     }
 
-    function getCategoryColor(category) {
-        const colorMap = {
-            'general': '#6c757d',      // Gray
-            'structure': '#007bff',    // Blue
-            'content': '#28a745',      // Green
-            'language': '#dc3545',     // Red
-            'critical': '#fd7e14',     // Orange
-            'sources': '#6f42c1'       // Purple
-        };
-        
-        return colorMap[category.toLowerCase()] || '#6c757d';
+    function createMacroButton(macro) {
+        const button = document.createElement('button');
+        button.className = 'macro-button';
+        if (appliedMacros.has(macro.id)) {
+            button.classList.add('active');
+        }
+        button.dataset.id = macro.id;
+        button.dataset.text = macro.text;
+        button.dataset.category = macro.category;
+        button.style.backgroundColor = getCategoryColor(macro.category);
+        button.textContent = macro.name;
+        button.onclick = () => toggleMacro(button);
+        return button;
     }
 
     async function toggleMacro(button) {
@@ -840,6 +813,11 @@
                         // Remove macro text
                         textarea.value = currentText.replace(macroText, '').replace(/\n\s*\n/g, '\n\n').trim();
                     }
+                    
+                    // Trigger the input event to activate autosave
+                    const event = new Event('input', { bubbles: true });
+                    textarea.dispatchEvent(event);
+                    
                 } else {
                     console.log('No textarea found in evaluation section');
                 }
@@ -894,79 +872,18 @@
         currentMacroId = null;
     }
 
-    async function saveMacro() {
-        const name = document.getElementById('macroName').value;
-        let category = document.getElementById('macroCategory').value;
-        const text = document.getElementById('macroText').value;
-        const criteriaId = document.getElementById('macroModal').dataset.criteriaId;
-        
-        if (category === 'custom') {
-            category = document.getElementById('customCategory').value;
-            if (!category) {
-                alert('Please enter a custom category name');
-                return;
-            }
-        }
-        
-        if (!name || !text) {
-            alert('Please fill in all fields');
-            return;
-        }
-        
-        try {
-            const response = await fetch('/save_macro_from_paper/{{ file_hash }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    name: name,
-                    category: category,
-                    text: text,
-                    criteria_id: criteriaId
-                })
-            });
-            
-            const data = await response.json();
-            if (data.success) {
-                closeModal();
-                loadMacros();
-                alert('Macro added successfully!');
-            } else {
-                alert('Error adding macro: ' + (data.error || 'Unknown error'));
-            }
-        } catch (error) {
-            console.error('Error adding macro:', error);
-            alert('Error adding macro');
-        }
-    }
-
-    // Handle custom category selection
-    document.addEventListener('DOMContentLoaded', function() {
-        const categorySelect = document.getElementById('macroCategory');
-        const customContainer = document.getElementById('customCategoryContainer');
-        
-        if (categorySelect) {
-            categorySelect.addEventListener('change', function() {
-                if (this.value === 'custom') {
-                    customContainer.style.display = 'block';
-                } else {
-                    customContainer.style.display = 'none';
-                }
-            });
-        }
-        
-        // Load macros when the page loads
-        loadMacros();
-        
-        // Close the modal when clicking outside of it
-        window.onclick = function(event) {
-            const modal = document.getElementById('macroModal');
-            if (event.target === modal) {
-                closeModal();
-            }
+    function getCategoryColor(category) {
+        const colorMap = {
+            'general': '#6c757d',      // Gray
+            'structure': '#007bff',    // Blue
+            'content': '#28a745',      // Green
+            'language': '#dc3545',     // Red
+            'critical': '#fd7e14',     // Orange
+            'sources': '#6f42c1'       // Purple
         };
-    });
+        
+        return colorMap[category.toLowerCase()] || '#6c757d';
+    }
 
     // Add new functions for tab switching
     function switchTab(tabName) {
