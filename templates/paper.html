@@ -354,7 +354,7 @@
             },
             body: JSON.stringify({
                 message: message,
-                model: '{{ model }}'
+                model: document.getElementById('modelSelect').value
             })
         })
         .then(response => {
