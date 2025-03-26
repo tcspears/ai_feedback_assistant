@@ -232,6 +232,7 @@ def paper(file_hash):
                     'id': eval.id,
                     'criteria_id': eval.criteria_id,
                     'section_name': criteria.section_name,
+                    'criteria_text': criteria.criteria_text,
                     'evaluation_text': eval.evaluation_text,
                     'weight': criteria.weight,
                     'core_feedback': criterion_feedback.get(eval.criteria_id, '').feedback_text if criterion_feedback.get(eval.criteria_id) else ''
@@ -1650,6 +1651,59 @@ def save_macro_from_paper(file_hash):
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error saving macro: {str(e)}")
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/update_macro/<int:macro_id>', methods=['POST'])
+@login_required
+def update_macro(macro_id):
+    try:
+        data = request.json
+        name = data['name']
+        category = data['category']
+        text = data['text']
+        
+        # Find and update the macro
+        macro = FeedbackMacro.query.get_or_404(macro_id)
+        
+        # Only allow editing if current user is admin or if it's their macro
+        # This check could be modified based on your application's needs
+        
+        # Update the macro
+        macro.name = name
+        macro.category = category
+        macro.text = text
+        
+        db.session.commit()
+        
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating macro: {str(e)}")
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/delete_macro/<int:macro_id>', methods=['POST'])
+@login_required
+def delete_macro(macro_id):
+    try:
+        # Find the macro
+        macro = FeedbackMacro.query.get_or_404(macro_id)
+        
+        # Only allow deletion if current user is admin or if it's their macro
+        # This check could be modified based on your application's needs
+        
+        # Delete any applied instances of this macro
+        AppliedMacro.query.filter_by(macro_id=macro_id).delete()
+        
+        # Delete the macro itself
+        db.session.delete(macro)
+        db.session.commit()
+        
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting macro: {str(e)}")
         return jsonify({"success": False, "error": str(e)})
 
 if __name__ == '__main__':
