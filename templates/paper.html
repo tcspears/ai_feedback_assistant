@@ -551,12 +551,6 @@
                 <h2 class="filename" id="filenameDisplay" onclick="editFilename()">{{ filename }}</h2>
                 <input type="text" id="filenameInput" value="{{ filename }}" style="display:none;" onblur="saveFilename()" onkeypress="checkEnter(event)">
             </div>
-            <div class="grading-timer">
-                <span title="Current essay grading time">⏱️ <span id="currentTime">00:00:00</span></span>
-                {% if average_time %}
-                <span title="Average grading time for this rubric">⌛ <span id="averageTime">{{ average_time }}</span></span>
-                {% endif %}
-            </div>
             <div class="navigation-links">
                 <a href="{{ url_for('logout') }}">Logout</a>
                 <a href="{{ url_for('list_papers') }}">All Papers</a>
@@ -1331,34 +1325,6 @@
         moderateButton.disabled = !additionalFeedback || !numericalMark;
         console.log('Button disabled:', moderateButton.disabled);
     }
-
-    function formatTime(seconds) {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const secs = seconds % 60;
-        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    }
-
-    // Initialize the timer with the server-provided upload time
-    const uploadTime = new Date('{{ upload_time }}').getTime();
-    let elapsedSeconds = Math.floor((Date.now() - uploadTime) / 1000);
-
-    // Update timer every second
-    setInterval(() => {
-        elapsedSeconds++;
-        document.getElementById('currentTime').textContent = formatTime(elapsedSeconds);
-    }, 1000);
-
-    // Update average time every minute
-    setInterval(() => {
-        fetch(`/get_average_time/{{ file_hash }}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.average_time) {
-                    document.getElementById('averageTime').textContent = data.average_time;
-                }
-            });
-    }, 60000); // Update every minute
 
     // Add these functions for macro management
     let currentMacroId = null;
