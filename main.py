@@ -1104,16 +1104,19 @@ def moderate_criterion(file_hash, criteria_id):
 
         # Load the criterion moderation prompt
         prompt_loader = PromptLoader('prompts.yaml')
-        prompt = prompt_loader.load_prompt('criterion_moderation_prompt')
+        prompt, system_msg = prompt_loader.create_prompt('criterion_moderation_prompt')
 
         # Fill in dynamic content
-        prompt.fill_section('criterion_info', f"Criterion: {criterion.section_name}\n\nDescription: {criterion.criteria_text}")
-        prompt.fill_section('feedback', criterion_feedback.feedback_text if criterion_feedback else "No feedback provided")
-        prompt.fill_section('mark_info', {'mark': saved_feedback.mark})
+        prompt.add_section('criterion_info', f"Criterion: {criterion.section_name}\n\nDescription: {criterion.criteria_text}")
+        prompt.add_section('feedback', criterion_feedback.feedback_text if criterion_feedback else "No feedback provided")
+        prompt.add_section('mark_info', str({'mark': saved_feedback.mark}))
 
         # Get moderation result from LLM
-        llm = get_llm_instance(model)
-        result = llm.complete(prompt.to_string())
+        result = llm_service.generate_response(
+            model=model,
+            messages=[{"role": "user", "content": prompt.build()}],
+            system_msg=system_msg
+        )
 
         # Validate result is either PASSES or FAILS
         result = result.strip().upper()
