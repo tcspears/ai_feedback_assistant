@@ -1116,16 +1116,29 @@ def delete_paper(file_hash):
 @login_required
 def get_macros(rubric_id):
     try:
+        # Get all criteria for this rubric
+        criteria = RubricCriteria.query.filter_by(rubric_id=rubric_id).order_by(RubricCriteria.id).all()
+        
+        # Get all macros for this rubric
         macros = FeedbackMacro.query.filter_by(rubric_id=rubric_id).order_by(FeedbackMacro.category, FeedbackMacro.name).all()
         
         return jsonify({
             "success": True,
+            "criteria": [
+                {
+                    "id": c.id,
+                    "section_name": c.section_name,
+                    "criteria_text": c.criteria_text
+                }
+                for c in criteria
+            ],
             "macros": [
                 {
                     "id": macro.id,
                     "name": macro.name,
                     "category": macro.category,
-                    "text": macro.text
+                    "text": macro.text,
+                    "criteria_id": macro.criteria_id
                 }
                 for macro in macros
             ]
@@ -1552,6 +1565,133 @@ def toggle_macro(file_hash):
         return jsonify({
             'success': True,
             'message': 'Macro toggled successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/export_rubric/<int:rubric_id>')
+@login_required
+def export_rubric(rubric_id):
+    try:
+        # Get the rubric and its criteria
+        rubric = Rubric.query.get_or_404(rubric_id)
+        criteria = RubricCriteria.query.filter_by(rubric_id=rubric_id).all()
+        
+        # Get all macros associated with this rubric
+        macros = FeedbackMacro.query.filter_by(rubric_id=rubric_id).all()
+        
+        # Create the export data structure
+        export_data = {
+            'name': rubric.name,
+            'description': rubric.description,
+            'criteria': [
+                {
+                    'section_name': c.section_name,
+                    'criteria_text': c.criteria_text
+                } for c in criteria
+            ],
+            'macros': [
+                {
+                    'name': m.name,
+                    'category': m.category,
+                    'text': m.text,
+                    'criteria_id': m.criteria_id
+                } for m in macros
+            ]
+        }
+        
+        return jsonify({
+            'success': True,
+            'rubric': export_data
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/import_rubric', methods=['POST'])
+@login_required
+def import_rubric():
+    try:
+        data = request.get_json()
+        if not data or 'rubric' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'No rubric data provided'
+            })
+        
+        rubric_data = data['rubric']
+        
+        # Create new rubric
+        new_rubric = Rubric(
+            name=rubric_data['name'],
+            description=rubric_data['description']
+        )
+        db.session.add(new_rubric)
+        db.session.flush()  # Get the new rubric ID
+        
+        # Create criteria
+        criteria_map = {}  # Map to store old criteria_id -> new criteria_id
+        for criterion_data in rubric_data['criteria']:
+            new_criterion = RubricCriteria(
+                rubric_id=new_rubric.id,
+                section_name=criterion_data['section_name'],
+                criteria_text=criterion_data['criteria_text']
+            )
+            db.session.add(new_criterion)
+            db.session.flush()
+            criteria_map[criterion_data.get('id', '')] = new_criterion.id
+        
+        # Create macros
+        for macro_data in rubric_data['macros']:
+            new_macro = FeedbackMacro(
+                rubric_id=new_rubric.id,
+                name=macro_data['name'],
+                category=macro_data['category'],
+                text=macro_data['text'],
+                criteria_id=macro_data.get('criteria_id')  # This will be null for general macros
+            )
+            db.session.add(new_macro)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Rubric imported successfully',
+            'rubric_id': new_rubric.id
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/delete_rubric/<int:rubric_id>', methods=['POST'])
+@login_required
+def delete_rubric(rubric_id):
+    try:
+        # Get the rubric
+        rubric = Rubric.query.get_or_404(rubric_id)
+        
+        # Delete associated criteria
+        RubricCriteria.query.filter_by(rubric_id=rubric_id).delete()
+        
+        # Delete associated macros
+        FeedbackMacro.query.filter_by(rubric_id=rubric_id).delete()
+        
+        # Delete the rubric
+        db.session.delete(rubric)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Rubric deleted successfully'
         })
     except Exception as e:
         db.session.rollback()
