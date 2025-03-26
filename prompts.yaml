@@ -110,3 +110,35 @@ criterion_moderation_prompt:
              ```
           3. Your reasoning should be clear, concise, and specific, explaining exactly why the feedback meets standards or needs improvement
           4. IMPORTANT: Your response must be valid JSON and nothing else - no explanatory text outside the JSON 
+
+ai_evaluation_prompt:
+  system_msg: "You are a senior academic with expertise in evaluating essays according to specific grading criteria. You must respond with a valid JSON object containing your evaluation and mark."
+  sections:
+    task_description:
+      content: "Your task is to evaluate an essay according to specific grading criteria. You will be provided with the essay text, the criterion description, and grade descriptors. Provide a detailed evaluation and suggest an appropriate mark."
+    essay_text:
+      content: null  # Will be filled dynamically with the essay text
+    criterion_info:
+      content: null  # Will be filled dynamically with criterion name and description
+    grade_descriptors:
+      content: null  # Will be filled dynamically with grade descriptors
+    detailed_instructions:
+      subsections:
+        requirements: |
+          1. Evaluate the essay according to the specific criterion:
+             - Consider the criterion requirements carefully
+             - Align your evaluation with the provided grade descriptors
+             - Provide specific examples from the essay
+             - Justify your suggested mark
+             - Use appropriate academic language
+          2. Return your response as a JSON object with exactly this structure:
+             ```json
+             {
+               "evaluation": "Your detailed evaluation here...",  // 3-5 paragraphs of detailed evaluation
+               "mark": 75,  // A number between 0 and 100
+               "reasoning": "Brief explanation of why this mark was chosen..."  // 1-2 sentences
+             }
+             ```
+          3. Your evaluation should be thorough and specific, with clear examples from the text
+          4. The mark should be justified by the evaluation and align with the grade descriptors
+          5. IMPORTANT: Your response must be valid JSON and nothing else - no explanatory text outside the JSON

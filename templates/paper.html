@@ -688,6 +688,98 @@
         .criteria-text:focus {
             outline: none;
         }
+
+        /* AI Assist Tab Styles */
+        .ai-assist-section {
+            padding: 20px;
+            background: var(--container-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .ai-assist-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .ai-assist-header h3 {
+            margin: 0;
+            color: var(--primary-color);
+        }
+
+        .model-select-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .model-select-container label {
+            color: var(--text-color);
+        }
+
+        #aiModelSelect {
+            padding: 8px;
+            background: var(--summary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-color);
+        }
+
+        .ai-evaluations-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .ai-evaluation-section {
+            background: var(--summary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 15px;
+        }
+
+        .ai-evaluation-section h4 {
+            margin: 0 0 15px 0;
+            color: var(--primary-color);
+        }
+
+        .ai-evaluation-content {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .ai-evaluation-text {
+            margin-bottom: 10px;
+        }
+
+        .ai-evaluation-mark {
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .ai-evaluation-reasoning {
+            font-style: italic;
+            color: var(--text-color);
+            opacity: 0.8;
+        }
+
+        .generate-ai-evaluation-btn {
+            align-self: flex-start;
+            padding: 8px 16px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .generate-ai-evaluation-btn:hover {
+            background: var(--hover-color);
+        }
     </style>
 </head>
 <body>
@@ -724,12 +816,13 @@
             <div class="evaluations-panel">
                 <!-- Tab Navigation -->
                 <div class="tab-navigation">
-                    <button class="tab-button active" onclick="switchTab('marking')">Marking</button>
-                    <button class="tab-button" onclick="switchTab('moderation')">Moderation</button>
+                    <button class="tab-button active" data-tab="marking">Marking</button>
+                    <button class="tab-button" data-tab="ai-assist">AI Assist</button>
+                    <button class="tab-button" data-tab="moderation">Moderation</button>
                 </div>
 
                 <!-- Marking Tab Content -->
-                <div id="marking-tab" class="tab-content active">
+                <div class="tab-content active" id="marking-content">
                     <!-- Criteria-specific Evaluations -->
                     {% for evaluation in evaluations %}
                     <div class="evaluation-section">
@@ -834,8 +927,41 @@
                     </div>
                 </div>
 
+                <!-- AI Assist Tab Content -->
+                <div class="tab-content" id="ai-assist-content">
+                    <div class="ai-assist-section">
+                        <div class="ai-assist-header">
+                            <h3>AI Second Marker Evaluation</h3>
+                            <div class="model-select-container">
+                                <label for="aiModelSelect">Select AI Model:</label>
+                                <select id="aiModelSelect">
+                                    <option value="gpt-4">GPT-4</option>
+                                    <option value="claude-3-opus">Claude 3 Opus</option>
+                                    <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="ai-evaluations-container">
+                            {% for evaluation in evaluations %}
+                                {% if evaluation.criteria_id %}
+                                    <div class="ai-evaluation-section" data-criteria-id="{{ evaluation.criteria_id }}">
+                                        <h4>{{ evaluation.section_name }}</h4>
+                                        <div class="ai-evaluation-content">
+                                            <div class="ai-evaluation-text markdown-rendered"></div>
+                                            <div class="ai-evaluation-mark"></div>
+                                            <div class="ai-evaluation-reasoning"></div>
+                                            <button class="generate-ai-evaluation-btn">Generate AI Evaluation</button>
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Moderation Tab Content -->
-                <div id="moderation-tab" class="tab-content">
+                <div class="tab-content" id="moderation-content">
                     <div class="moderation-section">
                         <h3>Feedback Moderation</h3>
                         
@@ -2363,6 +2489,119 @@
         }
         return null;
     }
+
+    // Add AI Assist tab functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        // ... existing initialization code ...
+
+        // Load AI evaluations when AI Assist tab is opened
+        document.querySelector('[data-tab="ai-assist"]').addEventListener('click', function() {
+            loadAIEvaluations();
+        });
+
+        // Function to load AI evaluations
+        function loadAIEvaluations() {
+            fetch(`/get_ai_evaluations/{{ file_hash }}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        Object.entries(data.evaluations).forEach(([criteriaId, evaluation]) => {
+                            const section = document.querySelector(`.ai-evaluation-section[data-criteria-id="${criteriaId}"]`);
+                            if (section) {
+                                const textDiv = section.querySelector('.ai-evaluation-text');
+                                const markDiv = section.querySelector('.ai-evaluation-mark');
+                                const reasoningDiv = section.querySelector('.ai-evaluation-reasoning');
+                                
+                                textDiv.innerHTML = marked.parse(evaluation.evaluation_text);
+                                markDiv.textContent = `Suggested Mark: ${evaluation.mark}%`;
+                                reasoningDiv.textContent = evaluation.reasoning;
+                            }
+                        });
+                    }
+                })
+                .catch(error => console.error('Error loading AI evaluations:', error));
+        }
+
+        // Function to generate AI evaluation
+        function generateAIEvaluation(criteriaId) {
+            const model = document.getElementById('aiModelSelect').value;
+            const section = document.querySelector(`.ai-evaluation-section[data-criteria-id="${criteriaId}"]`);
+            const button = section.querySelector('.generate-ai-evaluation-btn');
+            const content = section.querySelector('.ai-evaluation-content');
+            
+            // Add loading states
+            button.classList.add('loading');
+            content.classList.add('ai-evaluation-loading');
+            button.disabled = true;
+            
+            fetch(`/generate_ai_evaluation/{{ file_hash }}/${criteriaId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ model: model })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const textDiv = section.querySelector('.ai-evaluation-text');
+                    const markDiv = section.querySelector('.ai-evaluation-mark');
+                    const reasoningDiv = section.querySelector('.ai-evaluation-reasoning');
+                    
+                    textDiv.innerHTML = marked.parse(data.evaluation_text);
+                    markDiv.textContent = `Suggested Mark: ${data.mark}%`;
+                    reasoningDiv.textContent = data.reasoning;
+                } else {
+                    alert('Error generating AI evaluation: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error generating AI evaluation:', error);
+                alert('Error generating AI evaluation: ' + error.message);
+            })
+            .finally(() => {
+                // Remove loading states
+                button.classList.remove('loading');
+                content.classList.remove('ai-evaluation-loading');
+                button.disabled = false;
+            });
+        }
+
+        // Add click handlers for generate buttons
+        document.querySelectorAll('.generate-ai-evaluation-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const criteriaId = this.closest('.ai-evaluation-section').dataset.criteriaId;
+                generateAIEvaluation(criteriaId);
+            });
+        });
+    });
+
+    // Add tab switching functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        // Tab switching
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Remove active class from all buttons and contents
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                tabContents.forEach(content => content.classList.remove('active'));
+
+                // Add active class to clicked button and corresponding content
+                button.classList.add('active');
+                const tabId = button.getAttribute('data-tab');
+                document.getElementById(`${tabId}-content`).classList.add('active');
+
+                // Load AI evaluations if AI Assist tab is opened
+                if (tabId === 'ai-assist') {
+                    loadAIEvaluations();
+                }
+            });
+        });
+
+        // ... rest of existing initialization code ...
+    });
     </script>
 
     <!-- Macro Modal -->

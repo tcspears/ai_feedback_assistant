@@ -132,3 +132,16 @@ class ModerationResult(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=func.now())
     # Add relationship to criteria
     criteria = db.relationship('RubricCriteria', backref='moderation_results')
+
+class AIEvaluation(db.Model):
+    """Stores AI evaluations for each criterion."""
+    __tablename__ = 'ai_evaluations'
+    id = db.Column(db.Integer, primary_key=True)
+    paper_id = db.Column(db.Integer, db.ForeignKey('papers.id'), nullable=False)
+    criteria_id = db.Column(db.Integer, db.ForeignKey('rubric_criteria.id'), nullable=False)
+    evaluation_text = db.Column(db.Text, nullable=False)  # The AI's evaluation
+    mark = db.Column(db.Float)  # The AI's suggested mark for this criterion
+    created_at = db.Column(db.DateTime, nullable=False, default=func.now())
+    # Add relationships
+    paper = db.relationship('Paper', backref='ai_evaluations')
+    criteria = db.relationship('RubricCriteria', backref='ai_evaluations')

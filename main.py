@@ -37,7 +37,7 @@ import mimetypes  # For detecting file types
 from services.llm_service import LLMService
 from models.database import (
     db, User, Paper, Rubric, RubricCriteria, Evaluation, 
-    Chat, GradeDescriptors, SavedFeedback, FeedbackMacro, AppliedMacro, ModerationSession, CriterionFeedback, ModerationResult
+    Chat, GradeDescriptors, SavedFeedback, FeedbackMacro, AppliedMacro, ModerationSession, CriterionFeedback, ModerationResult, AIEvaluation
 )
 from utils.prompt_builder import StructuredPrompt
 from utils.prompt_loader import PromptLoader
@@ -1372,6 +1372,183 @@ def reject_criterion_changes(file_hash, criteria_id):
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error in reject_criterion_changes: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/get_ai_evaluations/<file_hash>')
+@login_required
+def get_ai_evaluations(file_hash):
+    try:
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get all AI evaluations for this paper
+        ai_evaluations = AIEvaluation.query.filter_by(paper_id=paper.id).all()
+        
+        # Format evaluations for response
+        formatted_evaluations = {}
+        for eval in ai_evaluations:
+            formatted_evaluations[eval.criteria_id] = {
+                'evaluation_text': eval.evaluation_text,
+                'mark': eval.mark,
+                'created_at': eval.created_at.isoformat()
+            }
+        
+        return jsonify({
+            'success': True,
+            'evaluations': formatted_evaluations
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error getting AI evaluations: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/generate_ai_evaluation/<file_hash>/<criteria_id>', methods=['POST'])
+@login_required
+def generate_ai_evaluation(file_hash, criteria_id):
+    try:
+        # Get the model from request
+        data = request.get_json()
+        model = data.get('model', 'gpt-4')
+        app.logger.info(f"Starting AI evaluation for criterion {criteria_id} using model {model}")
+
+        # Get paper and criterion details
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        criterion = RubricCriteria.query.get_or_404(criteria_id)
+        
+        # Get grade descriptors
+        grade_descriptors = GradeDescriptors.query.order_by(GradeDescriptors.range_start.desc()).all()
+        
+        # Format grade descriptors as text
+        grade_descriptors_text = ""
+        if grade_descriptors:
+            grade_descriptors_text = "Grade Descriptors:\n"
+            for descriptor in grade_descriptors:
+                grade_descriptors_text += f"{descriptor.range_start}-{descriptor.range_end}%: {descriptor.descriptor_text}\n"
+        else:
+            grade_descriptors_text = "No grade descriptors available."
+        
+        # Get more detailed information about the rubric this criterion belongs to
+        rubric = None
+        if criterion.rubric_id:
+            rubric = Rubric.query.get(criterion.rubric_id)
+
+        # Build detailed criterion info
+        criterion_info = f"Criterion: {criterion.section_name}\n\n"
+        criterion_info += f"Description: {criterion.criteria_text}\n\n"
+        
+        # Add rubric context
+        if rubric:
+            criterion_info += f"This criterion is part of the rubric: '{rubric.name}'\n"
+            criterion_info += f"Rubric description: {rubric.description}\n\n"
+            
+        # Add weight information
+        criterion_info += f"This criterion has a weight of {criterion.weight} in the overall assessment.\n"
+            
+        # Load the AI evaluation prompt
+        prompt, system_msg = prompt_loader.create_prompt('ai_evaluation_prompt')
+
+        # Fill in dynamic content
+        prompt.add_section('essay_text', paper.full_text)
+        prompt.add_section('criterion_info', criterion_info)
+        prompt.add_section('grade_descriptors', grade_descriptors_text)
+
+        app.logger.info(f"Sending prompt to model {model}")
+        # Get evaluation from LLM
+        result = llm_service.generate_response(
+            model=model,
+            messages=[{"role": "user", "content": prompt.build()}],
+            system_msg=system_msg
+        )
+        app.logger.info(f"Received response from model: {result[:100]}...")
+
+        # Try to extract JSON from the response
+        result_text = result.strip()
+        
+        # Try multiple approaches to extract JSON
+        json_extracted = False
+        json_content = None
+        
+        # Approach 1: Find JSON content between ```json and ``` markers
+        json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
+        if json_match:
+            app.logger.info("Found JSON content inside code blocks")
+            json_content = json_match.group(1)
+            json_extracted = True
+        
+        # Approach 2: Find content that looks like a JSON object (between curly braces)
+        if not json_extracted:
+            json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
+            if json_obj_match:
+                app.logger.info("Found JSON-like content between curly braces")
+                json_content = json_obj_match.group(1)
+                json_extracted = True
+        
+        # If we couldn't extract JSON, use the whole response
+        if not json_extracted:
+            app.logger.info("Using entire response as JSON")
+            json_content = result_text
+        
+        app.logger.info(f"Attempting to parse JSON: {json_content}")
+        try:
+            result_json = json.loads(json_content)
+            evaluation_text = result_json.get('evaluation', '').strip()
+            mark = result_json.get('mark')
+            reasoning = result_json.get('reasoning', '').strip()
+            
+            if not evaluation_text or mark is None:
+                app.logger.error("Missing required fields in AI evaluation result")
+                return jsonify({'success': False, 'error': 'Invalid AI evaluation result'})
+                
+            # Validate mark is between 0 and 100
+            try:
+                mark = float(mark)
+                if not (0 <= mark <= 100):
+                    return jsonify({'success': False, 'error': 'Invalid mark value'})
+            except (ValueError, TypeError):
+                return jsonify({'success': False, 'error': 'Invalid mark value'})
+                
+        except json.JSONDecodeError as e:
+            app.logger.error(f"JSON parse error: {str(e)}")
+            app.logger.error(f"Result text: {result_text}")
+            app.logger.error(f"Attempted to parse: {json_content}")
+            return jsonify({'success': False, 'error': f'Failed to parse AI evaluation result as JSON: {str(e)}'})
+
+        # Store the AI evaluation
+        ai_evaluation = AIEvaluation.query.filter_by(
+            paper_id=paper.id,
+            criteria_id=criteria_id
+        ).first()
+        
+        if not ai_evaluation:
+            app.logger.info("Creating new AI evaluation")
+            ai_evaluation = AIEvaluation(
+                paper_id=paper.id,
+                criteria_id=criteria_id,
+                evaluation_text=evaluation_text,
+                mark=mark
+            )
+            db.session.add(ai_evaluation)
+        else:
+            app.logger.info("Updating existing AI evaluation")
+            ai_evaluation.evaluation_text = evaluation_text
+            ai_evaluation.mark = mark
+        
+        db.session.commit()
+        app.logger.info("AI evaluation completed successfully")
+
+        return jsonify({
+            'success': True,
+            'evaluation_text': evaluation_text,
+            'mark': mark,
+            'reasoning': reasoning
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error in generate_ai_evaluation: {str(e)}")
+        app.logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/list_papers')
