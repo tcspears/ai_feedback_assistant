@@ -115,3 +115,17 @@ class ModerationSession(db.Model):
     completed_at = db.Column(db.DateTime)
     # Add relationship to paper
     paper = db.relationship('Paper', backref='moderation_sessions')
+    # Add relationship to moderation results
+    results = db.relationship('ModerationResult', backref='session', lazy=True)
+
+class ModerationResult(db.Model):
+    """Stores criterion-specific moderation results."""
+    __tablename__ = 'moderation_results'
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('moderation_sessions.id'), nullable=False)
+    criteria_id = db.Column(db.Integer, db.ForeignKey('rubric_criteria.id'), nullable=False)
+    result = db.Column(db.String(10), nullable=False)  # PASSES or FAILS
+    moderated_feedback = db.Column(db.Text)  # The suggested feedback after moderation
+    created_at = db.Column(db.DateTime, nullable=False, default=func.now())
+    # Add relationship to criteria
+    criteria = db.relationship('RubricCriteria', backref='moderation_results')
