@@ -40,6 +40,7 @@ class RubricCriteria(db.Model):
     rubric_id = db.Column(db.Integer, db.ForeignKey('rubrics.id'), nullable=False)
     section_name = db.Column(db.String(255), nullable=False)
     criteria_text = db.Column(db.Text, nullable=False)
+    weight = db.Column(db.Float, nullable=False, default=1.0)  # Weight for this criterion
 
 class Evaluation(db.Model):
     __tablename__ = 'evaluations'
@@ -80,6 +81,7 @@ class CriterionFeedback(db.Model):
     saved_feedback_id = db.Column(db.Integer, db.ForeignKey('saved_feedback.id'), nullable=False)
     criteria_id = db.Column(db.Integer, db.ForeignKey('rubric_criteria.id'), nullable=False)
     feedback_text = db.Column(db.Text, nullable=False)
+    mark = db.Column(db.Float)  # Mark for this specific criterion
     updated_at = db.Column(db.DateTime, nullable=False, default=func.now())
 
 class FeedbackMacro(db.Model):
