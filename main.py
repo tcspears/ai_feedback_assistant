@@ -281,7 +281,6 @@ def paper(file_hash):
     return render_template('paper.html',
                          filename=paper.filename,
                          full_text=paper.full_text,
-                         model=paper.model,
                          evaluations=formatted_evaluations,
                          chats=chats,
                          file_hash=file_hash,
@@ -631,7 +630,6 @@ def convert_docx_to_pdf(docx_path, output_dir):
 def index():
     if request.method == 'POST':
         f = request.files.get('file')
-        model = request.form.get('model', 'gpt-4-mini')
         rubric_id = request.form.get('rubric_id')
         
         if not rubric_id:
@@ -693,7 +691,6 @@ def index():
                     hash=file_hash,
                     filename=filename,
                     full_text=full_text,
-                    model=model,
                     pdf_path=pdf_storage_path
                 )
                 db.session.add(new_paper)

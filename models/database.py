@@ -19,7 +19,7 @@ class Paper(db.Model):
     filename = db.Column(db.String(255), nullable=False)
     full_text = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=func.now())
-    model = db.Column(db.String(50), nullable=False)
+    model = db.Column(db.String(50), nullable=True)
     pdf_path = db.Column(db.String(255), nullable=False)
     evaluations = db.relationship('Evaluation', backref='paper', lazy=True)
     chats = db.relationship('Chat', backref='paper', lazy=True)
