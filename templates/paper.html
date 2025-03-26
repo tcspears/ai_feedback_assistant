@@ -733,7 +733,17 @@
                     <!-- Criteria-specific Evaluations -->
                     {% for evaluation in evaluations %}
                     <div class="evaluation-section">
-                        <h3>{{ evaluation.section_name }}</h3>
+                        <div class="feedback-header">
+                            <h3>{{ evaluation.section_name }}</h3>
+                            <div class="mark-input-container">
+                                <label>Mark (0-100):</label>
+                                <input type="number" class="criterion-mark-input" 
+                                       min="0" max="100" step="0.1" 
+                                       data-criteria-id="{{ evaluation.criteria_id }}"
+                                       data-weight="{{ evaluation.weight }}"
+                                       value="{{ criterion_feedback[evaluation.criteria_id].mark if criterion_feedback[evaluation.criteria_id] else '' }}">
+                            </div>
+                        </div>
                         
                         <!-- Marking Criteria Description -->
                         <div class="criteria-description-box">
@@ -741,37 +751,21 @@
                             <textarea class="criteria-text" rows="3" readonly>{{ evaluation.criteria_text }}</textarea>
                         </div>
                         
-                        <!-- Single Feedback Section -->
-                        <div class="feedback-section">
-                            <div class="feedback-header">
-                                <h4>Feedback</h4>
-                                <div class="mark-input-container">
-                                    <label>Mark (0-100):</label>
-                                    <input type="number" class="criterion-mark-input" 
-                                           min="0" max="100" step="0.1" 
-                                           data-criteria-id="{{ evaluation.criteria_id }}"
-                                           data-weight="{{ evaluation.weight }}"
-                                           value="{{ criterion_feedback[evaluation.criteria_id].mark if criterion_feedback[evaluation.criteria_id] else '' }}">
-                                </div>
+                        <!-- Feedback Macros -->
+                        <div class="feedback-macros">
+                            <div class="macros-header">
+                                <button class="add-macro-btn" onclick="showAddMacroModal('{{ evaluation.criteria_id }}')" title="Add a new macro">+</button>
                             </div>
-                            
-                            <!-- Feedback Macros -->
-                            <div class="feedback-macros">
-                                <div class="macros-header">
-                                    <h5>Feedback Macros</h5>
-                                    <button class="add-macro-btn" onclick="showAddMacroModal('{{ evaluation.criteria_id }}')" title="Add a new macro">+</button>
-                                </div>
-                                <div id="macroButtonsContainer-{{ evaluation.criteria_id }}" class="macro-buttons-container">
-                                    <!-- Macro buttons will be loaded here -->
-                                    <div class="loading-macros">Loading macros...</div>
-                                </div>
+                            <div id="macroButtonsContainer-{{ evaluation.criteria_id }}" class="macro-buttons-container">
+                                <!-- Macro buttons will be loaded here -->
+                                <div class="loading-macros">Loading macros...</div>
                             </div>
-                            
-                            <textarea class="feedback-input" 
-                                      data-evaluation-id="{{ evaluation.id }}"
-                                      data-criteria-id="{{ evaluation.criteria_id }}"
-                                      placeholder="Enter feedback for this criterion...">{{ criterion_feedback[evaluation.criteria_id].feedback_text if criterion_feedback[evaluation.criteria_id] else evaluation.evaluation_text }}</textarea>
                         </div>
+                        
+                        <textarea class="feedback-input" 
+                                  data-evaluation-id="{{ evaluation.id }}"
+                                  data-criteria-id="{{ evaluation.criteria_id }}"
+                                  placeholder="Enter feedback for this criterion...">{{ criterion_feedback[evaluation.criteria_id].feedback_text if criterion_feedback[evaluation.criteria_id] else evaluation.evaluation_text }}</textarea>
                     </div>
                     {% endfor %}
 

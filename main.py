@@ -1418,30 +1418,71 @@ def export_feedback(file_hash):
                       .order_by(Evaluation.criteria_id.nullsfirst())
                       .all())
         
-        # Create CSV data
-        output = StringIO()
-        writer = csv.writer(output)
-        
-        # Write header
-        writer.writerow(['Paper Information'])
-        writer.writerow(['Filename', paper.filename])
-        writer.writerow(['Mark', saved_feedback.mark if saved_feedback.mark else 'Not assigned'])
-        writer.writerow([])  # Empty row for spacing
-        
-        # Write consolidated feedback
-        writer.writerow(['Consolidated Feedback'])
-        writer.writerow([saved_feedback.consolidated_feedback if saved_feedback.consolidated_feedback else 'No consolidated feedback'])
-        writer.writerow([])  # Empty row for spacing
-        
-        # Write criterion-specific feedback
-        writer.writerow(['Criterion-specific Feedback'])
+        # Get all criteria and their feedback
+        criteria_data = []
         for eval in evaluations:
             if eval.criteria_id:
                 criteria = RubricCriteria.query.get(eval.criteria_id)
                 if criteria:
-                    writer.writerow([f'Criterion: {criteria.section_name}'])
-                    writer.writerow([eval.evaluation_text if eval.evaluation_text else 'No feedback'])
-                    writer.writerow([])  # Empty row for spacing
+                    # Get criterion-specific mark and feedback
+                    criterion_feedback = CriterionFeedback.query.filter_by(
+                        saved_feedback_id=saved_feedback.id,
+                        criteria_id=eval.criteria_id
+                    ).first()
+                    
+                    criterion_mark = criterion_feedback.mark if criterion_feedback and criterion_feedback.mark else 0
+                    criterion_feedback_text = criterion_feedback.feedback_text if criterion_feedback else eval.evaluation_text
+                    
+                    criteria_data.append({
+                        'name': criteria.section_name,
+                        'mark': criterion_mark,
+                        'weight': criteria.weight,
+                        'feedback': criterion_feedback_text or 'No feedback'
+                    })
+        
+        # Create CSV data with a single row per essay
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Create headers
+        headers = ['Paper Name', 'Total Mark']
+        
+        # Add column headers for each criterion
+        for i, criterion in enumerate(criteria_data):
+            criterion_num = i + 1
+            headers.extend([
+                f'Criterion {criterion_num} Name',
+                f'Criterion {criterion_num} Mark',
+                f'Criterion {criterion_num} Weight',
+                f'Criterion {criterion_num} Feedback'
+            ])
+        
+        # Add consolidated feedback header
+        headers.append('Consolidated Feedback')
+        
+        # Write headers
+        writer.writerow(headers)
+        
+        # Create a single row with all data
+        row_data = [paper.filename]
+        
+        # Add total mark
+        row_data.append(f"{saved_feedback.mark:.1f}%" if saved_feedback.mark else 'Not assigned')
+        
+        # Add data for each criterion
+        for criterion in criteria_data:
+            row_data.extend([
+                criterion['name'],
+                f"{criterion['mark']:.1f}%" if criterion['mark'] else 'Not assigned',
+                f"{criterion['weight']:.2f}",
+                criterion['feedback']
+            ])
+        
+        # Add consolidated feedback
+        row_data.append(saved_feedback.consolidated_feedback if saved_feedback.consolidated_feedback else 'No consolidated feedback')
+        
+        # Write the row
+        writer.writerow(row_data)
         
         # Create the response
         output.seek(0)
