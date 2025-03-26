@@ -46,106 +46,116 @@
 
             <!-- Middle Panel - Evaluations -->
             <div class="evaluations-panel">
-                <!-- Core Feedback Section -->
-                <div class="evaluation-section">
-                    <h3>Core Feedback</h3>
-                    
-                    <!-- Feedback Macros -->
-                    <div class="feedback-macros">
-                        <div class="macros-header">
-                            <h4>Feedback Macros</h4>
-                            <button id="addNewMacroBtn" onclick="showAddMacroModal()" title="Add a new macro">+</button>
-                        </div>
-                        <div id="macroButtonsContainer" class="macro-buttons-container">
-                            <!-- Macro buttons will be loaded here -->
-                            <div class="loading-macros">Loading macros...</div>
-                        </div>
-                    </div>
-                    
-                    <textarea id="additionalFeedback" 
-                              placeholder="Enter your core feedback here...">{{ saved_feedback.additional_feedback if saved_feedback }}</textarea>
-                    <div class="button-row">
-                        <button id="saveAdditionalFeedback" onclick="saveAdditionalFeedback()">Save Core Feedback</button>
-                    </div>
+                <!-- Tab Navigation -->
+                <div class="tab-navigation">
+                    <button class="tab-button active" onclick="switchTab('marking')">Marking</button>
+                    <button class="tab-button" onclick="switchTab('moderation')">Moderation</button>
                 </div>
 
-                <!-- Numerical Mark Section -->
-                <div class="evaluation-section">
-                    <h3>Numerical Mark</h3>
-                    <div class="mark-input-container">
-                        <input type="number" id="numericalMark" min="0" max="100" step="0.5" 
-                               value="{{ saved_feedback.mark if saved_feedback and saved_feedback.mark }}"
-                               placeholder="Enter mark (0-100)"
-                               oninput="checkModerateButton()">
-                        <button id="saveMark" onclick="saveMark()">Save Mark</button>
-                        <button id="moderateFeedback" onclick="moderateFeedback()" disabled>
-                            Moderate Feedback
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Criteria-specific Evaluations -->
-                {% for evaluation in evaluations %}
-                <div class="evaluation-section">
-                    <h3>{{ evaluation.section_name }}</h3>
-                    <div class="evaluation-content">
-                        <textarea 
-                            class="feedback-textarea" 
-                            id="evaluation-{{ evaluation.id }}"
-                            data-evaluation-id="{{ evaluation.id }}"
-                            data-disabled="{{ not evaluation.evaluation_text }}"
-                            spellcheck="true"
-                            placeholder="Criteria-specific feedback will appear here after moderation...">{{ evaluation.evaluation_text }}</textarea>
-                        <button class="save-feedback-btn" 
-                                onclick="saveFeedback('{{ evaluation.id }}')" 
-                                data-disabled="{{ not evaluation.evaluation_text }}">
-                            Save Changes
-                        </button>
-                        <div class="save-status" id="save-status-{{ evaluation.id }}"></div>
-                    </div>
-                </div>
-                {% endfor %}
-
-                <!-- Consolidated Feedback -->
-                <div class="evaluation-section">
-                    <h3>Consolidated Feedback</h3>
-                    <div class="consolidated-feedback-controls">
-                        <div class="button-row">
-                            <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
-                                Generate Consolidated Feedback
-                            </button>
-                            <button id="saveConsolidatedFeedback" onclick="saveConsolidatedFeedback()" style="display: none;">
-                                Save Feedback
-                            </button>
-                            <button id="polishFeedback" 
-                                    onclick="polishFeedback()" 
-                                    data-display="{{ 'inline-block' if saved_consolidated_feedback else 'none' }}">
-                                Polish Feedback
-                            </button>
-                            <button id="copyConsolidatedFeedback" onclick="copyConsolidatedFeedback()">
-                                Copy Feedback
-                            </button>
-                        </div>
-                        <div class="toggle-row">
-                            <div class="toggle-container">
-                                <label class="switch">
-                                    <input type="checkbox" id="showMarkdownToggle" onchange="toggleMarkdownView()">
-                                    <span class="slider round"></span>
-                                </label>
-                                <span class="toggle-label">Show Markdown</span>
+                <!-- Marking Tab Content -->
+                <div id="marking-tab" class="tab-content active">
+                    <!-- Criteria-specific Evaluations -->
+                    {% for evaluation in evaluations %}
+                    <div class="evaluation-section">
+                        <h3>{{ evaluation.section_name }}</h3>
+                        
+                        <!-- Core Feedback Section -->
+                        <div class="core-feedback-section">
+                            <h4>Core Feedback</h4>
+                            
+                            <!-- Feedback Macros -->
+                            <div class="feedback-macros">
+                                <div class="macros-header">
+                                    <h5>Feedback Macros</h5>
+                                    <button class="add-macro-btn" onclick="showAddMacroModal('{{ evaluation.criteria_id }}')" title="Add a new macro">+</button>
+                                </div>
+                                <div id="macroButtonsContainer-{{ evaluation.criteria_id }}" class="macro-buttons-container">
+                                    <!-- Macro buttons will be loaded here -->
+                                    <div class="loading-macros">Loading macros...</div>
+                                </div>
                             </div>
-                            <div class="toggle-container">
-                                <label class="switch">
-                                    <input type="checkbox" id="alignToMarkToggle">
-                                    <span class="slider round"></span>
-                                </label>
-                                <span class="toggle-label">Align language to mark</span>
+                            
+                            <textarea 
+                                class="core-feedback-textarea" 
+                                id="core-feedback-{{ evaluation.criteria_id }}"
+                                data-criteria-id="{{ evaluation.criteria_id }}"
+                                placeholder="Enter core feedback for this criterion...">{{ evaluation.core_feedback if evaluation.core_feedback else '' }}</textarea>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <!-- Numerical Mark Section -->
+                    <div class="evaluation-section">
+                        <h3>Numerical Mark</h3>
+                        <div class="mark-input-container">
+                            <input type="number" id="numericalMark" min="0" max="100" step="0.5" 
+                                   value="{{ saved_feedback.mark if saved_feedback and saved_feedback.mark }}"
+                                   placeholder="Enter mark (0-100)"
+                                   oninput="checkModerateButton()">
+                            <button id="saveMark" onclick="saveMark()">Save Mark</button>
+                        </div>
+                    </div>
+
+                    <!-- Consolidated Feedback -->
+                    <div class="evaluation-section">
+                        <h3>Consolidated Feedback</h3>
+                        <div class="consolidated-feedback-controls">
+                            <div class="button-row">
+                                <button id="generateConsolidatedFeedback" onclick="generateConsolidatedFeedback()">
+                                    Generate Consolidated Feedback
+                                </button>
+                                <button id="saveConsolidatedFeedback" onclick="saveConsolidatedFeedback()" style="display: none;">
+                                    Save Feedback
+                                </button>
+                                <button id="copyConsolidatedFeedback" onclick="copyConsolidatedFeedback()">
+                                    Copy Feedback
+                                </button>
+                            </div>
+                            <div class="toggle-row">
+                                <div class="toggle-container">
+                                    <label class="switch">
+                                        <input type="checkbox" id="showMarkdownToggle" onchange="toggleMarkdownView()">
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <span class="toggle-label">Show Markdown</span>
+                                </div>
+                                <div class="toggle-container">
+                                    <label class="switch">
+                                        <input type="checkbox" id="alignToMarkToggle">
+                                        <span class="slider round"></span>
+                                    </label>
+                                    <span class="toggle-label">Align language to mark</span>
+                                </div>
                             </div>
                         </div>
+                        <textarea id="consolidatedFeedbackRaw" style="display: none;">{{ saved_consolidated_feedback }}</textarea>
+                        <div id="consolidatedFeedback" class="evaluation-content markdown-rendered">
+                            {{ saved_consolidated_feedback | markdown if saved_consolidated_feedback }}
+                        </div>
                     </div>
-                    <textarea id="consolidatedFeedbackRaw" style="display: none;">{{ saved_consolidated_feedback }}</textarea>
-                    <div id="consolidatedFeedback" class="evaluation-content markdown-rendered">
-                        {{ saved_consolidated_feedback | markdown if saved_consolidated_feedback }}
+                </div>
+
+                <!-- Moderation Tab Content -->
+                <div id="moderation-tab" class="tab-content">
+                    <div class="moderation-section">
+                        <h3>Moderation</h3>
+                        <div class="moderation-controls">
+                            <button id="startModeration" onclick="startModeration()" class="primary-button">
+                                Start Moderation Session
+                            </button>
+                            <button id="completeModeration" onclick="completeModeration()" style="display: none;">
+                                Complete Moderation
+                            </button>
+                            <button id="rejectModeration" onclick="rejectModeration()" style="display: none;">
+                                Reject Changes
+                            </button>
+                        </div>
+                        <div id="moderationStatus" class="moderation-status">
+                            <!-- Status will be shown here -->
+                        </div>
+                        <div id="moderationFeedback" class="moderation-feedback">
+                            <!-- Original and moderated feedback will be shown here -->
+                        </div>
                     </div>
                 </div>
 
@@ -398,19 +408,25 @@
         const originalText = button.textContent;
         button.textContent = 'Generating...';
         button.disabled = true;
-
-        const additionalFeedback = document.getElementById('additionalFeedback').value;
-        const alignToMark = document.getElementById('alignToMarkToggle').checked;
-        const mark = document.getElementById('numericalMark').value;
         
         try {
+            // Collect all criterion feedback
+            const criterionFeedback = {};
+            document.querySelectorAll('.core-feedback-textarea').forEach(textarea => {
+                const criteriaId = textarea.dataset.criteriaId;
+                criterionFeedback[criteriaId] = textarea.value;
+            });
+            
+            const mark = document.getElementById('numericalMark').value;
+            const alignToMark = document.getElementById('alignToMarkToggle').checked;
+            
             const response = await fetch('/generate_consolidated_feedback', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    additional_feedback: additionalFeedback,
+                    criterion_feedback: criterionFeedback,
                     model: '{{ model }}',
                     file_hash: '{{ file_hash }}',
                     align_to_mark: alignToMark,
@@ -418,16 +434,16 @@
                     applied_macros: Array.from(appliedMacros)
                 })
             });
-
+            
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-
+            
             const data = await response.json();
             if (data.error) {
                 throw new Error(data.error);
             }
-
+            
             document.getElementById('consolidatedFeedbackRaw').value = data.consolidated_feedback;
             document.getElementById('consolidatedFeedback').innerHTML = marked.parse(data.consolidated_feedback);
             
@@ -435,10 +451,7 @@
             if (document.getElementById('showMarkdownToggle').checked) {
                 document.getElementById('saveConsolidatedFeedback').style.display = 'inline-block';
             }
-
-            // Show the Polish button after successful generation
-            document.getElementById('polishFeedback').style.display = 'inline-block';
-
+            
         } catch (error) {
             console.error('Error:', error);
             alert(`Error generating consolidated feedback: ${error.message}`);
@@ -583,9 +596,6 @@
             saveStatus.className = 'save-status show';
             button.parentNode.appendChild(saveStatus);
             setTimeout(() => saveStatus.remove(), 3000);
-
-            // Show the Polish button after successful save
-            document.getElementById('polishFeedback').style.display = 'inline-block';
             
         } catch (error) {
             console.error('Error:', error);
@@ -628,241 +638,6 @@
         }
     }
 
-    async function polishFeedback() {
-        const button = document.getElementById('polishFeedback');
-        const originalText = button.textContent;
-        button.textContent = 'Polishing...';
-        button.disabled = true;
-
-        try {
-            const response = await fetch('/polish_feedback/{{ file_hash }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    model: '{{ model }}'
-                })
-            });
-
-            const data = await response.json();
-            
-            // Update both views with polished feedback
-            document.getElementById('consolidatedFeedbackRaw').value = data.polished_feedback;
-            document.getElementById('consolidatedFeedback').innerHTML = marked.parse(data.polished_feedback);
-            
-            // Show save button if in markdown view
-            if (document.getElementById('showMarkdownToggle').checked) {
-                document.getElementById('saveConsolidatedFeedback').style.display = 'inline-block';
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error polishing feedback');
-        } finally {
-            button.textContent = originalText;
-            button.disabled = false;
-        }
-    }
-
-    async function moderateFeedback() {
-        const button = document.getElementById('moderateFeedback');
-        const originalText = button.textContent;
-        button.textContent = 'Moderating...';
-        button.disabled = true;
-
-        const coreFeedback = document.getElementById('additionalFeedback').value;
-        
-        try {
-            const response = await fetch('/moderate_feedback/{{ file_hash }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    core_feedback: coreFeedback,
-                    model: '{{ model }}',
-                    applied_macros: Array.from(appliedMacros)
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            // Update each criteria textarea with the moderated feedback
-            for (const [evaluationId, feedback] of Object.entries(data.moderated_feedback)) {
-                const textarea = document.getElementById(`evaluation-${evaluationId}`);
-                if (textarea) {
-                    textarea.value = feedback;
-                    textarea.disabled = false;
-                    // Enable the corresponding save button
-                    textarea.nextElementSibling.disabled = false;
-                }
-            }
-
-        } catch (error) {
-            console.error('Error:', error);
-            alert(`Error moderating feedback: ${error.message}`);
-        } finally {
-            button.textContent = originalText;
-            button.disabled = false;
-        }
-    }
-
-    // Create debounced save functions for each type of content
-    const debouncedSaveCoreFeedback = _.debounce(async (content) => {
-        try {
-            const response = await fetch('/save_additional_feedback/{{ file_hash }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    additional_feedback: content
-                })
-            });
-            
-            const data = await response.json();
-            if (!data.success) {
-                throw new Error(data.error || 'Failed to save');
-            }
-            
-            // Enable the moderate button after successful save
-            checkModerateButton();
-            
-            // Show a brief "Saved" message
-            const saveStatus = document.createElement('div');
-            saveStatus.textContent = 'Changes saved';
-            saveStatus.className = 'save-status show';
-            document.getElementById('additionalFeedback').parentNode.appendChild(saveStatus);
-            setTimeout(() => saveStatus.remove(), 2000);
-            
-        } catch (error) {
-            console.error('Error:', error);
-            // Optionally show an error message to the user
-        }
-    }, 1000);  // Wait 1 second after last keystroke before saving
-
-    const debouncedSaveCriteriaFeedback = _.debounce(async (evaluationId, content) => {
-        try {
-            const response = await fetch('/save_feedback', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    evaluation_id: evaluationId,
-                    feedback_text: content
-                })
-            });
-            
-            const data = await response.json();
-            if (!data.success) {
-                throw new Error(data.error || 'Failed to save');
-            }
-            
-            // Show brief save status
-            const saveStatus = document.getElementById(`save-status-${evaluationId}`);
-            if (saveStatus) {
-                saveStatus.textContent = 'Changes saved';
-                saveStatus.classList.add('show');
-                setTimeout(() => saveStatus.classList.remove('show'), 2000);
-            }
-            
-        } catch (error) {
-            console.error('Error:', error);
-        }
-    }, 1000);
-
-    // Add event listeners to textareas
-    document.addEventListener('DOMContentLoaded', function() {
-        // Core feedback autosave
-        const coreFeedbackTextarea = document.getElementById('additionalFeedback');
-        if (coreFeedbackTextarea) {
-            coreFeedbackTextarea.addEventListener('input', (e) => {
-                debouncedSaveCoreFeedback(e.target.value);
-                checkModerateButton();
-            });
-        }
-        
-        // Criteria feedback autosave
-        const criteriaTextareas = document.querySelectorAll('.feedback-textarea[data-evaluation-id]');
-        criteriaTextareas.forEach(textarea => {
-            textarea.addEventListener('input', (e) => {
-                const evaluationId = e.target.dataset.evaluationId;
-                debouncedSaveCriteriaFeedback(evaluationId, e.target.value);
-            });
-        });
-        
-        // Consolidated feedback autosave
-        const consolidatedTextarea = document.getElementById('consolidatedFeedbackRaw');
-        if (consolidatedTextarea) {
-            consolidatedTextarea.addEventListener('input', (e) => {
-                debouncedSaveConsolidatedFeedback(e.target.value);
-            });
-        }
-    });
-
-    // Add debounced save for consolidated feedback
-    const debouncedSaveConsolidatedFeedback = _.debounce(async (content) => {
-        try {
-            const response = await fetch('/save_consolidated_feedback/{{ file_hash }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    consolidated_feedback: content
-                })
-            });
-            
-            const data = await response.json();
-            if (!data.success) {
-                throw new Error(data.error || 'Failed to save');
-            }
-            
-            // Update the rendered view if in preview mode
-            if (!document.getElementById('showMarkdownToggle').checked) {
-                document.getElementById('consolidatedFeedback').innerHTML = marked.parse(content);
-            }
-            
-            // Show brief save status
-            const saveStatus = document.createElement('div');
-            saveStatus.textContent = 'Changes saved';
-            saveStatus.className = 'save-status show';
-            document.getElementById('consolidatedFeedbackRaw').parentNode.appendChild(saveStatus);
-            setTimeout(() => saveStatus.remove(), 2000);
-            
-        } catch (error) {
-            console.error('Error:', error);
-        }
-    }, 1000);
-
-    function copyConsolidatedFeedback() {
-        const rawFeedback = document.getElementById('consolidatedFeedbackRaw');
-        const renderedFeedback = document.getElementById('consolidatedFeedback');
-        const textToCopy = document.getElementById('showMarkdownToggle').checked ? 
-            rawFeedback.value : 
-            renderedFeedback.innerText;
-        
-        navigator.clipboard.writeText(textToCopy).then(() => {
-            const button = document.getElementById('copyConsolidatedFeedback');
-            const originalText = button.textContent;
-            button.textContent = 'Copied!';
-            setTimeout(() => {
-                button.textContent = originalText;
-            }, 2000);
-        }).catch(err => {
-            console.error('Failed to copy text:', err);
-            alert('Failed to copy text to clipboard');
-        });
-    }
-
     function checkModerateButton() {
         const moderateButton = document.getElementById('moderateFeedback');
         const additionalFeedback = document.getElementById('additionalFeedback').value.trim();
@@ -883,7 +658,6 @@
         
         // Add event listeners for both inputs
         additionalFeedback.addEventListener('input', (e) => {
-            debouncedSaveCoreFeedback(e.target.value);
             checkModerateButton();
         });
         
@@ -927,10 +701,6 @@
 
     async function loadMacros() {
         try {
-            // Get the rubric ID from the related papers section
-            const currentPaperLink = document.querySelector('.related-paper-link.current-paper');
-            if (!currentPaperLink) return;
-            
             const response = await fetch(`/get_paper_macros/{{ file_hash }}`);
             const data = await response.json();
             
@@ -938,59 +708,65 @@
                 throw new Error(data.error || 'Failed to load macros');
             }
             
-            const macrosContainer = document.getElementById('macroButtonsContainer');
-            macrosContainer.innerHTML = '';
-            
-            // Group macros by category
-            const macrosByCategory = {};
+            // Group macros by criteria
+            const macrosByCriteria = {};
             data.macros.forEach(macro => {
-                if (!macrosByCategory[macro.category]) {
-                    macrosByCategory[macro.category] = [];
+                if (!macrosByCriteria[macro.criteria_id]) {
+                    macrosByCriteria[macro.criteria_id] = [];
                 }
-                macrosByCategory[macro.category].push(macro);
+                macrosByCriteria[macro.criteria_id].push(macro);
             });
             
-            // Create a section for each category
-            for (const [category, macros] of Object.entries(macrosByCategory)) {
-                const categorySection = document.createElement('div');
-                categorySection.className = 'macro-category';
-                categorySection.innerHTML = `<h5>${category.charAt(0).toUpperCase() + category.slice(1)}</h5>`;
+            // Update macro containers for each criterion
+            for (const [criteriaId, macros] of Object.entries(macrosByCriteria)) {
+                const container = document.getElementById(`macroButtonsContainer-${criteriaId}`);
+                if (!container) continue;
                 
-                const macrosList = document.createElement('div');
-                macrosList.className = 'macro-buttons';
+                container.innerHTML = '';
                 
+                // Group macros by category
+                const macrosByCategory = {};
                 macros.forEach(macro => {
-                    const macroButton = document.createElement('button');
-                    macroButton.className = `macro-button ${macro.applied ? 'active' : ''}`;
-                    macroButton.dataset.id = macro.id;
-                    macroButton.dataset.category = macro.category;
-                    macroButton.dataset.text = macro.text;
-                    macroButton.textContent = macro.name;
-                    macroButton.title = macro.text;
-                    macroButton.onclick = function() { toggleMacro(this); };
-                    
-                    // Add to applied macros set if it's already applied
-                    if (macro.applied) {
-                        appliedMacros.add(macro.id);
+                    if (!macrosByCategory[macro.category]) {
+                        macrosByCategory[macro.category] = [];
                     }
-                    
-                    // Set button color based on category
-                    macroButton.style.backgroundColor = getCategoryColor(macro.category);
-                    
-                    macrosList.appendChild(macroButton);
+                    macrosByCategory[macro.category].push(macro);
                 });
                 
-                categorySection.appendChild(macrosList);
-                macrosContainer.appendChild(categorySection);
-            }
-            
-            if (Object.keys(macrosByCategory).length === 0) {
-                macrosContainer.innerHTML = '<div class="no-macros-message">No macros available for this rubric</div>';
+                // Create a section for each category
+                for (const [category, categoryMacros] of Object.entries(macrosByCategory)) {
+                    const categorySection = document.createElement('div');
+                    categorySection.className = 'macro-category';
+                    categorySection.innerHTML = `<h5>${category.charAt(0).toUpperCase() + category.slice(1)}</h5>`;
+                    
+                    const macrosList = document.createElement('div');
+                    macrosList.className = 'macro-buttons';
+                    
+                    categoryMacros.forEach(macro => {
+                        const macroButton = document.createElement('button');
+                        macroButton.className = `macro-button ${macro.applied ? 'active' : ''}`;
+                        macroButton.dataset.id = macro.id;
+                        macroButton.dataset.category = macro.category;
+                        macroButton.dataset.text = macro.text;
+                        macroButton.textContent = macro.name;
+                        macroButton.title = macro.text;
+                        macroButton.onclick = function() { toggleMacro(this); };
+                        
+                        if (macro.applied) {
+                            appliedMacros.add(macro.id);
+                        }
+                        
+                        macroButton.style.backgroundColor = getCategoryColor(macro.category);
+                        macrosList.appendChild(macroButton);
+                    });
+                    
+                    categorySection.appendChild(macrosList);
+                    container.appendChild(categorySection);
+                }
             }
         } catch (error) {
             console.error('Error loading macros:', error);
-            document.getElementById('macroButtonsContainer').innerHTML = 
-                `<div class="error-message">Error loading macros: ${error.message}</div>`;
+            alert('Error loading macros: ' + error.message);
         }
     }
 
@@ -1011,21 +787,52 @@
         const macroId = button.dataset.id;
         const isActive = button.classList.contains('active');
         
-        if (isActive) {
-            // Remove from applied macros
-            appliedMacros.delete(parseInt(macroId));
-            button.classList.remove('active');
-        } else {
-            // Add to applied macros
-            appliedMacros.add(parseInt(macroId));
-            button.classList.add('active');
+        try {
+            const response = await fetch('/toggle_macro/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    macro_id: macroId,
+                    applied: !isActive
+                })
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to toggle macro');
+            }
+            
+            // Update button state
+            button.classList.toggle('active');
+            if (!isActive) {
+                appliedMacros.add(macroId);
+            } else {
+                appliedMacros.delete(macroId);
+            }
+            
+            // Update the core feedback textarea with the macro text
+            const criteriaId = button.closest('.evaluation-section').querySelector('.core-feedback-textarea').dataset.criteriaId;
+            const textarea = document.getElementById(`core-feedback-${criteriaId}`);
+            const currentText = textarea.value;
+            const macroText = button.dataset.text;
+            
+            if (!isActive) {
+                // Add macro text
+                textarea.value = currentText + (currentText ? '\n\n' : '') + macroText;
+            } else {
+                // Remove macro text
+                textarea.value = currentText.replace(macroText, '').replace(/\n\s*\n/g, '\n\n').trim();
+            }
+            
+            // Save the updated feedback
+            checkModerateButton();
+            
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error toggling macro: ' + error.message);
         }
-        
-        // Save the applied macros state
-        await saveAppliedMacros();
-        
-        // We no longer update the feedback text directly
-        // The macros will be combined with core feedback only when sent to the language model
     }
 
     async function saveAppliedMacros() {
@@ -1049,7 +856,8 @@
         }
     }
 
-    function showAddMacroModal() {
+    function showAddMacroModal(criteriaId) {
+        document.getElementById('macroModal').dataset.criteriaId = criteriaId;
         document.getElementById('macroModal').style.display = 'block';
         resetMacroForm();
     }
@@ -1071,6 +879,7 @@
         const name = document.getElementById('macroName').value;
         let category = document.getElementById('macroCategory').value;
         const text = document.getElementById('macroText').value;
+        const criteriaId = document.getElementById('macroModal').dataset.criteriaId;
         
         if (category === 'custom') {
             category = document.getElementById('customCategory').value;
@@ -1094,7 +903,8 @@
                 body: JSON.stringify({
                     name: name,
                     category: category,
-                    text: text
+                    text: text,
+                    criteria_id: criteriaId
                 })
             });
             
@@ -1137,6 +947,217 @@
                 closeModal();
             }
         };
+    });
+
+    // Add new functions for tab switching
+    function switchTab(tabName) {
+        // Hide all tab contents
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        
+        // Deactivate all tab buttons
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.classList.remove('active');
+        });
+        
+        // Show selected tab content
+        document.getElementById(`${tabName}-tab`).classList.add('active');
+        
+        // Activate selected tab button
+        event.target.classList.add('active');
+    }
+
+    // Add new functions for moderation
+    async function startModeration() {
+        const button = document.getElementById('startModeration');
+        button.disabled = true;
+        button.textContent = 'Starting...';
+        
+        try {
+            const response = await fetch('/start_moderation/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: '{{ model }}'
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Show moderation interface
+                document.getElementById('moderationStatus').innerHTML = `
+                    <div class="status-message">
+                        <h4>Moderation in Progress</h4>
+                        <p>Session started at: ${new Date().toLocaleString()}</p>
+                    </div>
+                `;
+                
+                // Show moderation controls
+                document.getElementById('completeModeration').style.display = 'inline-block';
+                document.getElementById('rejectModeration').style.display = 'inline-block';
+                
+                // Load moderation feedback
+                loadModerationFeedback();
+            } else {
+                throw new Error(data.error || 'Failed to start moderation');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error starting moderation: ' + error.message);
+        } finally {
+            button.disabled = false;
+            button.textContent = 'Start Moderation Session';
+        }
+    }
+
+    async function loadModerationFeedback() {
+        try {
+            const response = await fetch('/get_moderation_feedback/{{ file_hash }}');
+            const data = await response.json();
+            
+            if (data.success) {
+                document.getElementById('moderationFeedback').innerHTML = `
+                    <div class="feedback-comparison">
+                        <div class="original-feedback">
+                            <h4>Original Feedback</h4>
+                            <div class="feedback-content">${marked.parse(data.original_feedback)}</div>
+                        </div>
+                        <div class="moderated-feedback">
+                            <h4>Moderated Feedback</h4>
+                            <div class="feedback-content">${marked.parse(data.moderated_feedback)}</div>
+                        </div>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error loading moderation feedback');
+        }
+    }
+
+    async function completeModeration() {
+        if (!confirm('Are you sure you want to complete this moderation session? This will apply the moderated feedback.')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/complete_moderation/{{ file_hash }}', {
+                method: 'POST'
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Update the consolidated feedback with moderated version
+                document.getElementById('consolidatedFeedbackRaw').value = data.moderated_feedback;
+                document.getElementById('consolidatedFeedback').innerHTML = marked.parse(data.moderated_feedback);
+                
+                // Update status
+                document.getElementById('moderationStatus').innerHTML = `
+                    <div class="status-message success">
+                        <h4>Moderation Completed</h4>
+                        <p>Completed at: ${new Date().toLocaleString()}</p>
+                    </div>
+                `;
+                
+                // Hide moderation controls
+                document.getElementById('completeModeration').style.display = 'none';
+                document.getElementById('rejectModeration').style.display = 'none';
+            } else {
+                throw new Error(data.error || 'Failed to complete moderation');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error completing moderation: ' + error.message);
+        }
+    }
+
+    async function rejectModeration() {
+        if (!confirm('Are you sure you want to reject the moderated feedback? This will keep the original feedback.')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/reject_moderation/{{ file_hash }}', {
+                method: 'POST'
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Update status
+                document.getElementById('moderationStatus').innerHTML = `
+                    <div class="status-message warning">
+                        <h4>Moderation Rejected</h4>
+                        <p>Rejected at: ${new Date().toLocaleString()}</p>
+                    </div>
+                `;
+                
+                // Hide moderation controls
+                document.getElementById('completeModeration').style.display = 'none';
+                document.getElementById('rejectModeration').style.display = 'none';
+            } else {
+                throw new Error(data.error || 'Failed to reject moderation');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error rejecting moderation: ' + error.message);
+        }
+    }
+
+    // Add new functions for handling criterion-specific feedback
+    async function saveCriterionFeedback(criteriaId) {
+        const textarea = document.getElementById(`core-feedback-${criteriaId}`);
+        const feedbackText = textarea.value;
+        
+        try {
+            const response = await fetch('/save_criterion_feedback/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    criteria_id: criteriaId,
+                    feedback_text: feedbackText
+                })
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to save feedback');
+            }
+            
+            // Show brief save status
+            const saveStatus = document.createElement('div');
+            saveStatus.textContent = 'Changes saved';
+            saveStatus.className = 'save-status show';
+            textarea.parentNode.appendChild(saveStatus);
+            setTimeout(() => saveStatus.remove(), 2000);
+            
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error saving feedback: ' + error.message);
+        }
+    }
+
+    // Create debounced save function for criterion feedback
+    const debouncedSaveCriterionFeedback = _.debounce((criteriaId) => {
+        saveCriterionFeedback(criteriaId);
+    }, 1000);
+
+    // Add event listeners for criterion feedback textareas
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add input event listeners to all criterion feedback textareas
+        document.querySelectorAll('.core-feedback-textarea').forEach(textarea => {
+            textarea.addEventListener('input', function() {
+                const criteriaId = this.dataset.criteriaId;
+                debouncedSaveCriterionFeedback(criteriaId);
+            });
+        });
+        
+        // Load macros for each criterion
+        loadMacros();
     });
     </script>
 

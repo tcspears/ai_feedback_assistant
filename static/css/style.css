@@ -1301,3 +1301,209 @@ label[for="is_admin"] {
 #copyMacros:hover {
     background-color: var(--hover-color);
 }
+
+/* Tab Navigation */
+.tab-navigation {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 10px;
+}
+
+.tab-button {
+    padding: 8px 16px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: #666;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.tab-button:hover {
+    background-color: #f5f5f5;
+}
+
+.tab-button.active {
+    background-color: #007bff;
+    color: white;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Criterion-specific Feedback Sections */
+.core-feedback-section {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+}
+
+.core-feedback-section h4 {
+    margin-top: 0;
+    color: #333;
+    font-size: 16px;
+}
+
+.core-feedback-textarea {
+    width: 100%;
+    min-height: 100px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-top: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* Moderation Interface */
+.moderation-section {
+    padding: 20px;
+    background-color: #fff;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.moderation-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.moderation-status {
+    margin-bottom: 20px;
+    padding: 15px;
+    border-radius: 4px;
+    background-color: #f8f9fa;
+}
+
+.status-message {
+    margin: 0;
+}
+
+.status-message h4 {
+    margin-top: 0;
+    color: #333;
+}
+
+.status-message.success {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+}
+
+.status-message.warning {
+    background-color: #fff3cd;
+    border: 1px solid #ffeeba;
+}
+
+.moderation-feedback {
+    margin-top: 20px;
+}
+
+.feedback-comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.original-feedback,
+.moderated-feedback {
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+}
+
+.original-feedback h4,
+.moderated-feedback h4 {
+    margin-top: 0;
+    color: #333;
+    font-size: 16px;
+}
+
+.feedback-content {
+    margin-top: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* Criterion-specific Macro Management */
+.macro-buttons-container {
+    margin-top: 10px;
+}
+
+.macro-category {
+    margin-bottom: 15px;
+}
+
+.macro-category h5 {
+    margin: 0 0 8px 0;
+    color: #666;
+    font-size: 14px;
+}
+
+.macro-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.macro-button {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    background-color: #e9ecef;
+    color: #333;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.macro-button:hover {
+    background-color: #dee2e6;
+}
+
+.macro-button.active {
+    background-color: #007bff;
+    color: white;
+}
+
+.add-macro-btn {
+    padding: 4px 8px;
+    border: none;
+    border-radius: 4px;
+    background-color: #28a745;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.add-macro-btn:hover {
+    background-color: #218838;
+}
+
+/* Save Status */
+.save-status {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    padding: 4px 8px;
+    background-color: #28a745;
+    color: white;
+    border-radius: 4px;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.save-status.show {
+    opacity: 1;
+}

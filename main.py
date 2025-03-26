@@ -37,10 +37,11 @@ import mimetypes  # For detecting file types
 from services.llm_service import LLMService
 from models.database import (
     db, User, Paper, Rubric, RubricCriteria, Evaluation, 
-    Chat, GradeDescriptors, SavedFeedback, FeedbackMacro, AppliedMacro
+    Chat, GradeDescriptors, SavedFeedback, FeedbackMacro, AppliedMacro, ModerationSession, CriterionFeedback
 )
 from utils.prompt_builder import StructuredPrompt
 from utils.prompt_loader import PromptLoader
+from sqlalchemy import or_
 
 def adapt_datetime(ts):
     return ts.isoformat()
@@ -196,11 +197,18 @@ def paper(file_hash):
     formatted_related = [(p.hash, p.filename, p.hash == file_hash) 
                         for p in related_papers]
     
-    # Simplified query to get evaluations
+    # Get evaluations and criterion feedback
     evaluations = (Evaluation.query
                   .filter_by(paper_id=paper.id)
                   .order_by(Evaluation.criteria_id.nullsfirst())
                   .all())
+    
+    # Get saved feedback and criterion feedback
+    saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+    criterion_feedback = {}
+    if saved_feedback:
+        for cf in saved_feedback.criterion_feedback:
+            criterion_feedback[cf.criteria_id] = cf.feedback_text
     
     # Format evaluations for template
     md = markdown.Markdown(extensions=['extra'])
@@ -221,16 +229,21 @@ def paper(file_hash):
             if criteria:
                 formatted_evaluations.append({
                     'id': eval.id,
+                    'criteria_id': eval.criteria_id,
                     'section_name': criteria.section_name,
-                    'evaluation_text': eval.evaluation_text
+                    'evaluation_text': eval.evaluation_text,
+                    'core_feedback': criterion_feedback.get(eval.criteria_id, '')
                 })
     
     # Get chat history
     chats = [(chat.user_message, chat.ai_response) for chat in 
              Chat.query.filter_by(paper_id=paper.id).order_by(Chat.created_at).all()]
     
-    # Get saved feedback (don't convert to HTML)
-    saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+    # Get the latest moderation session
+    moderation_session = (ModerationSession.query
+                        .filter_by(paper_id=paper.id)
+                        .order_by(ModerationSession.created_at.desc())
+                        .first())
     
     # Get the rubric name
     rubric_name = None
@@ -275,11 +288,11 @@ def paper(file_hash):
                          related_papers=formatted_related,
                          rubric_name=rubric_name,
                          saved_feedback=saved_feedback,
-                         saved_additional_feedback=saved_feedback.additional_feedback if saved_feedback else None,
                          saved_consolidated_feedback=saved_feedback.consolidated_feedback if saved_feedback else None,
                          pdf_path=paper.pdf_path.replace('static/', ''),
                          upload_time=upload_time.isoformat(),
-                         average_time=average_time)
+                         average_time=average_time,
+                         moderation_session=moderation_session)
 
 # Initialize the service with API clients
 llm_service = LLMService(
@@ -476,98 +489,78 @@ def save_mark(file_hash):
 def generate_consolidated_feedback():
     try:
         data = request.json
-        additional_feedback = data['additional_feedback']
-        file_hash = data['file_hash']
-        applied_macro_ids = data.get('applied_macros', [])
+        criterion_feedback = data.get('criterion_feedback', {})
+        model = data.get('model', 'gpt-4o')
+        file_hash = data.get('file_hash')
         align_to_mark = data.get('align_to_mark', False)
         mark = data.get('mark')
-        model = data.get('model', 'gpt-4')
+        applied_macros = data.get('applied_macros', [])
+        
+        if not file_hash:
+            return jsonify({'error': 'No file hash provided'})
         
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
         
-        # Get all evaluations for this paper (excluding summary)
+        # Get the rubric and criteria
         evaluations = (Evaluation.query
-                      .join(RubricCriteria)
-                      .filter(
-                          Evaluation.paper_id == paper.id,
-                          Evaluation.criteria_id.isnot(None)
-                      )
-                      .order_by(RubricCriteria.id)
+                      .filter_by(paper_id=paper.id)
+                      .order_by(Evaluation.criteria_id.nullsfirst())
                       .all())
         
-        # Get the text of all applied macros
-        applied_macro_texts = []
-        if applied_macro_ids:
-            applied_macros = FeedbackMacro.query.filter(FeedbackMacro.id.in_(applied_macro_ids)).all()
-            applied_macro_texts = [macro.text for macro in applied_macros]
+        # Build the prompt for consolidated feedback
+        prompt_parts = []
         
-        # Combine core feedback with macro texts
-        combined_feedback = additional_feedback
-        if applied_macro_texts:
-            combined_feedback += "\n\n<feedback_macros>\n"
-            for text in applied_macro_texts:
-                combined_feedback += f"\n{text}\n"
-            combined_feedback += "\n</feedback_macros>\n"
-        # Build consolidated feedback string
-        consolidated_parts = ["<core_feedback>", combined_feedback, "</core_feedback>" "\n<additional_feedback>"]
-        
-        # Add each criteria-specific feedback with its section name as a subheading
+        # Add criterion-specific feedback
         for eval in evaluations:
-            criteria = RubricCriteria.query.get(eval.criteria_id)
-            consolidated_parts.extend([
-                f"\n## {criteria.section_name}",
-                eval.evaluation_text
-            ])
+            if eval.criteria_id and eval.criteria_id in criterion_feedback:
+                criteria = RubricCriteria.query.get(eval.criteria_id)
+                if criteria:
+                    prompt_parts.append(f"Feedback for {criteria.section_name}:\n{criterion_feedback[eval.criteria_id]}\n")
         
-        consolidated_feedback = "\n\n".join(consolidated_parts)
-        consolidated_feedback = consolidated_feedback + "\n</additional_feedback>"
+        # Add mark if provided
+        if mark is not None:
+            prompt_parts.append(f"Overall mark: {mark}")
         
-        # If align_to_mark is True and mark is provided, use the LLM to align the feedback to the mark
-        if align_to_mark and mark is not None:
-            # Use prompt loader to create the prompt
-            prompt, system_msg = prompt_loader.create_prompt(
-                'align_feedback_prompt',
-                feedback=consolidated_feedback,
-                mark=str(mark)
+        # Add applied macros if any
+        if applied_macros:
+            macros = FeedbackMacro.query.filter(FeedbackMacro.id.in_(applied_macros)).all()
+            if macros:
+                prompt_parts.append("\nApplied feedback macros:")
+                for macro in macros:
+                    prompt_parts.append(f"- {macro.name}: {macro.text}")
+        
+        # Build the final prompt
+        prompt = "\n".join(prompt_parts)
+        
+        # Generate consolidated feedback using the selected model
+        if model.startswith('gpt'):
+            response = client_openai.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are an expert at consolidating feedback for academic essays. Your task is to combine the provided feedback into a clear, well-structured response that maintains the key points while improving the overall flow and coherence."},
+                    {"role": "user", "content": prompt}
+                ]
             )
-            
-            final_prompt = prompt.build()
-            
-            api_logger.info("\n=== ALIGNING FEEDBACK TO MARK ===")
-            api_logger.info(f"Model: {model}")
-            api_logger.debug(f"Prompt:\n{final_prompt}")
-            
-            try:
-                consolidated_feedback = llm_service.generate_response(
-                    model=model,
-                    messages=[{"role": "user", "content": final_prompt}],
-                    system_msg=system_msg
-                )
-            except Exception as e:
-                api_logger.error(f"Error aligning feedback to mark: {str(e)}")
-                # Continue with the original consolidated feedback if alignment fails
-        
-        # Save the consolidated feedback
-        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
-        if saved_feedback:
-            saved_feedback.additional_feedback = additional_feedback
-            saved_feedback.consolidated_feedback = consolidated_feedback
-            saved_feedback.updated_at = datetime.now()
+            consolidated_feedback = response.choices[0].message.content
+        elif model.startswith('claude'):
+            response = client_anthropic.messages.create(
+                model=model,
+                max_tokens=1000,
+                messages=[
+                    {"role": "user", "content": f"You are an expert at consolidating feedback for academic essays. Your task is to combine the provided feedback into a clear, well-structured response that maintains the key points while improving the overall flow and coherence.\n\nHere is the feedback to consolidate:\n\n{prompt}"}
+                ]
+            )
+            consolidated_feedback = response.content[0].text
         else:
-            saved_feedback = SavedFeedback(
-                paper_id=paper.id,
-                additional_feedback=additional_feedback,
-                consolidated_feedback=consolidated_feedback
-            )
-            db.session.add(saved_feedback)
+            return jsonify({'error': f'Unsupported model: {model}'})
         
-        db.session.commit()
-        
-        return jsonify({"consolidated_feedback": consolidated_feedback})
-        
+        return jsonify({
+            'success': True,
+            'consolidated_feedback': consolidated_feedback
+        })
     except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        print(f"Error generating consolidated feedback: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/save_additional_feedback/<file_hash>', methods=['POST'])
 @login_required
@@ -898,44 +891,6 @@ def save_consolidated_feedback(file_hash):
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)})
-
-@app.route('/polish_feedback/<file_hash>', methods=['POST'])
-@login_required
-def polish_feedback(file_hash):
-    data = request.json
-    model = data['model']
-    
-    paper = Paper.query.filter_by(hash=file_hash).first_or_404()
-    saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
-    
-    if not saved_feedback or not saved_feedback.consolidated_feedback:
-        return jsonify({"error": "No feedback found to polish"}), 400
-
-    # Use prompt loader to create the prompt
-    prompt, system_msg = prompt_loader.create_prompt(
-        'polish_feedback_prompt',
-        feedback_to_polish=saved_feedback.consolidated_feedback,
-        preserve_macros=True  # Add a flag to indicate that macro content should be preserved
-    )
-
-    final_prompt = prompt.build()
-
-    api_logger.info("\n=== POLISHING FEEDBACK ===")
-    api_logger.info(f"Model: {model}")
-    api_logger.debug(f"Prompt:\n{final_prompt}")
-    api_logger.debug(f"System message: {system_msg}")
-
-    try:
-        polished_feedback = llm_service.generate_response(
-            model=model,
-            messages=[{"role": "user", "content": final_prompt}],
-            system_msg=system_msg
-        )
-        return jsonify({"polished_feedback": polished_feedback})
-        
-    except Exception as e:
-        api_logger.error(f"Error polishing feedback: {str(e)}")
-        return jsonify({"error": str(e)}), 500
 
 @app.route('/moderate_feedback/<file_hash>', methods=['POST'])
 @login_required
@@ -1306,39 +1261,56 @@ def copy_macros():
 @app.route('/get_paper_macros/<file_hash>')
 @login_required
 def get_paper_macros(file_hash):
-    try:
-        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
-        
-        # Get the rubric ID for this paper
-        rubric_id = (db.session.query(RubricCriteria.rubric_id)
-                    .join(Evaluation, Evaluation.criteria_id == RubricCriteria.id)
-                    .filter(Evaluation.paper_id == paper.id)
-                    .first())
-        
-        if not rubric_id:
-            return jsonify({"success": True, "macros": []})
-        
-        # Get all macros for this rubric
-        macros = FeedbackMacro.query.filter_by(rubric_id=rubric_id[0]).order_by(FeedbackMacro.category, FeedbackMacro.name).all()
-        
-        # Get applied macros for this paper
-        applied_macro_ids = set(am.macro_id for am in AppliedMacro.query.filter_by(paper_id=paper.id).all())
-        
+    paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+    
+    # Get the rubric ID for the current paper through its evaluations
+    current_rubric_id = (db.session.query(RubricCriteria.rubric_id)
+                        .join(Evaluation, Evaluation.criteria_id == RubricCriteria.id)
+                        .filter(Evaluation.paper_id == paper.id)
+                        .first())
+    
+    if not current_rubric_id:
         return jsonify({
-            "success": True,
-            "macros": [
-                {
-                    "id": macro.id,
-                    "name": macro.name,
-                    "category": macro.category,
-                    "text": macro.text,
-                    "applied": macro.id in applied_macro_ids
-                }
-                for macro in macros
-            ]
+            'success': False,
+            'error': 'No rubric found for this paper'
         })
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    
+    # Get all macros for this rubric (both global and criterion-specific)
+    macros = (FeedbackMacro.query
+              .filter(
+                  or_(
+                      FeedbackMacro.rubric_id == current_rubric_id[0],
+                      FeedbackMacro.criteria_id.in_(
+                          db.session.query(RubricCriteria.id)
+                          .filter(RubricCriteria.rubric_id == current_rubric_id[0])
+                      )
+                  )
+              )
+              .all())
+    
+    # Get applied macros for this paper
+    applied_macros = (AppliedMacro.query
+                     .filter_by(paper_id=paper.id)
+                     .all())
+    applied_macro_ids = {am.macro_id for am in applied_macros}
+    
+    # Format macros for response
+    formatted_macros = []
+    for macro in macros:
+        formatted_macro = {
+            'id': macro.id,
+            'name': macro.name,
+            'category': macro.category,
+            'text': macro.text,
+            'applied': macro.id in applied_macro_ids,
+            'criteria_id': macro.criteria_id
+        }
+        formatted_macros.append(formatted_macro)
+    
+    return jsonify({
+        'success': True,
+        'macros': formatted_macros
+    })
 
 @app.route('/save_applied_macros/<file_hash>', methods=['POST'])
 @login_required
@@ -1375,6 +1347,7 @@ def save_macro_from_paper(file_hash):
         name = data['name']
         category = data['category']
         text = data['text']
+        criteria_id = data.get('criteria_id')  # Optional, for criterion-specific macros
         
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
         
@@ -1392,7 +1365,8 @@ def save_macro_from_paper(file_hash):
             rubric_id=rubric_id[0],
             name=name,
             category=category,
-            text=text
+            text=text,
+            criteria_id=criteria_id
         )
         db.session.add(new_macro)
         db.session.commit()
@@ -1401,6 +1375,205 @@ def save_macro_from_paper(file_hash):
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)})
+
+@app.route('/start_moderation/<file_hash>', methods=['POST'])
+@login_required
+def start_moderation(file_hash):
+    try:
+        data = request.json
+        model = data.get('model', 'gpt-4')
+        
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get the current feedback
+        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+        if not saved_feedback or not saved_feedback.consolidated_feedback:
+            return jsonify({"success": False, "error": "No feedback found to moderate"})
+        
+        # Create a new moderation session
+        moderation_session = ModerationSession(
+            paper_id=paper.id,
+            original_feedback=saved_feedback.consolidated_feedback,
+            status='in_progress'
+        )
+        db.session.add(moderation_session)
+        db.session.commit()
+        
+        return jsonify({"success": True, "session_id": moderation_session.id})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/get_moderation_feedback/<file_hash>')
+@login_required
+def get_moderation_feedback(file_hash):
+    try:
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get the latest moderation session
+        moderation_session = (ModerationSession.query
+                            .filter_by(paper_id=paper.id)
+                            .order_by(ModerationSession.created_at.desc())
+                            .first())
+        
+        if not moderation_session:
+            return jsonify({"success": False, "error": "No moderation session found"})
+        
+        return jsonify({
+            "success": True,
+            "original_feedback": moderation_session.original_feedback,
+            "moderated_feedback": moderation_session.moderated_feedback,
+            "status": moderation_session.status
+        })
+        
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/complete_moderation/<file_hash>', methods=['POST'])
+@login_required
+def complete_moderation(file_hash):
+    try:
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get the latest moderation session
+        moderation_session = (ModerationSession.query
+                            .filter_by(paper_id=paper.id)
+                            .order_by(ModerationSession.created_at.desc())
+                            .first())
+        
+        if not moderation_session or moderation_session.status != 'in_progress':
+            return jsonify({"success": False, "error": "No active moderation session found"})
+        
+        # Update the saved feedback with the moderated version
+        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+        if saved_feedback:
+            saved_feedback.consolidated_feedback = moderation_session.moderated_feedback
+            saved_feedback.updated_at = datetime.now()
+        
+        # Update moderation session status
+        moderation_session.status = 'completed'
+        moderation_session.completed_at = datetime.now()
+        
+        db.session.commit()
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/reject_moderation/<file_hash>', methods=['POST'])
+@login_required
+def reject_moderation(file_hash):
+    try:
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get the latest moderation session
+        moderation_session = (ModerationSession.query
+                            .filter_by(paper_id=paper.id)
+                            .order_by(ModerationSession.created_at.desc())
+                            .first())
+        
+        if not moderation_session or moderation_session.status != 'in_progress':
+            return jsonify({"success": False, "error": "No active moderation session found"})
+        
+        # Update moderation session status
+        moderation_session.status = 'rejected'
+        moderation_session.completed_at = datetime.now()
+        
+        db.session.commit()
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/save_criterion_feedback/<file_hash>', methods=['POST'])
+@login_required
+def save_criterion_feedback(file_hash):
+    try:
+        data = request.json
+        criteria_id = data['criteria_id']
+        feedback_text = data['feedback_text']
+        
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get or create SavedFeedback for this paper
+        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+        if not saved_feedback:
+            saved_feedback = SavedFeedback(paper_id=paper.id)
+            db.session.add(saved_feedback)
+        
+        # Get or create CriterionFeedback for this criteria
+        criterion_feedback = CriterionFeedback.query.filter_by(
+            saved_feedback_id=saved_feedback.id,
+            criteria_id=criteria_id
+        ).first()
+        
+        if not criterion_feedback:
+            criterion_feedback = CriterionFeedback(
+                saved_feedback_id=saved_feedback.id,
+                criteria_id=criteria_id,
+                feedback_text=feedback_text
+            )
+            db.session.add(criterion_feedback)
+        else:
+            criterion_feedback.feedback_text = feedback_text
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Feedback saved successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/toggle_macro/<file_hash>', methods=['POST'])
+@login_required
+def toggle_macro(file_hash):
+    try:
+        data = request.json
+        macro_id = data['macro_id']
+        applied = data['applied']
+        
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get the existing applied macro
+        applied_macro = AppliedMacro.query.filter_by(
+            paper_id=paper.id,
+            macro_id=macro_id
+        ).first()
+        
+        if applied:
+            # Add the macro if it doesn't exist
+            if not applied_macro:
+                applied_macro = AppliedMacro(
+                    paper_id=paper.id,
+                    macro_id=macro_id
+                )
+                db.session.add(applied_macro)
+        else:
+            # Remove the macro if it exists
+            if applied_macro:
+                db.session.delete(applied_macro)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Macro toggled successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")
