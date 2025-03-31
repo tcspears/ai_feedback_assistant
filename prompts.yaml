@@ -17,8 +17,6 @@ polish_feedback_prompt:
       content: "Polish and enhance the following feedback by organizing it into clear sections for each marking criterion, followed by overall comments. Each section should consolidate the core feedback and any additional feedback macros for that criterion."
     feedback_sections:
       content: null  # Will be filled dynamically with criterion-specific feedback and macros
-    overall_mark:
-      content: "Overall mark: {mark}"  # Will be filled dynamically
     detailed_instructions:
       subsections:
         goal: "Create a well-structured feedback document with clear sections for each criterion and an overall summary."
@@ -30,11 +28,11 @@ polish_feedback_prompt:
              - Present the feedback in clear, professional prose
           3. End with an "Overall Comments" section that:
              - Provides a brief summary of the essay's strengths and weaknesses
-             - Relates these to the overall mark given
              - Suggests key areas for improvement
-          4. Do not hallucinate or add new content not present in the original feedback
-          5. Maintain consistent tone and style throughout
-          6. Use appropriate Markdown formatting for headers and emphasis
+          4. Do not mention or discuss any marks or grades in the feedback
+          5. Do not hallucinate or add new content not present in the original feedback
+          6. Maintain consistent tone and style throughout
+          7. Use appropriate Markdown formatting for headers and emphasis
         format: |
           # [Criterion Name]
           [Polished feedback for this criterion]
@@ -43,7 +41,7 @@ polish_feedback_prompt:
           [Polished feedback for this criterion]
 
           # Overall Comments
-          [Brief summary and key areas for improvement]
+          [Brief summary of strengths and weaknesses, with key areas for improvement]
 
 moderate_feedback_prompt:
   system_msg: "You are a senior academic with expertise in the subject matter of the essay below. Format all responses in Markdown."

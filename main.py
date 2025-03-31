@@ -525,7 +525,6 @@ def generate_consolidated_feedback():
         model = data.get('model', 'gpt-4')
         file_hash = data.get('file_hash')
         align_to_mark = data.get('align_to_mark', False)
-        mark = data.get('mark')
         applied_macros = data.get('applied_macros', [])
         
         if not file_hash:
@@ -591,8 +590,6 @@ def generate_consolidated_feedback():
         
         # Fill in dynamic content
         prompt.add_section('feedback_sections', feedback_text)
-        if mark is not None:
-            prompt.add_section('overall_mark', f"Overall mark: {mark}%")
         
         # Generate consolidated feedback using the selected model
         consolidated_feedback = llm_service.generate_response(
