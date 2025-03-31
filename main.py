@@ -519,6 +519,8 @@ def save_mark(file_hash):
 def generate_consolidated_feedback():
     try:
         data = request.json
+        app.logger.debug(f"Received data: {data}")
+        
         criterion_feedback = data.get('criterion_feedback', {})
         model = data.get('model', 'gpt-4')
         file_hash = data.get('file_hash')
@@ -537,36 +539,60 @@ def generate_consolidated_feedback():
                       .order_by(Evaluation.criteria_id.nullsfirst())
                       .all())
         
-        # Build the prompt for consolidated feedback
-        prompt_parts = []
-        
-        # Add criterion-specific feedback
+        # Get all criteria and their feedback
+        feedback_sections = []
         for eval in evaluations:
-            if eval.criteria_id and eval.criteria_id in criterion_feedback:
+            if eval.criteria_id:
                 criteria = RubricCriteria.query.get(eval.criteria_id)
                 if criteria:
-                    prompt_parts.append(f"Feedback for {criteria.section_name}:\n{criterion_feedback[eval.criteria_id]}\n")
+                    # Get criterion-specific feedback and macros
+                    section_feedback = criterion_feedback.get(str(eval.criteria_id), '')
+                    
+                    # Handle applied macros - ensure we're working with the correct data structure
+                    section_macros = []
+                    if applied_macros:
+                        for macro in applied_macros:
+                            # Handle both dictionary and object formats
+                            if isinstance(macro, dict):
+                                macro_criteria_id = macro.get('criteria_id')
+                                macro_text = macro.get('text', '')
+                            else:
+                                macro_criteria_id = getattr(macro, 'criteria_id', None)
+                                macro_text = getattr(macro, 'text', '')
+                            
+                            if macro_criteria_id == eval.criteria_id and macro_text:
+                                section_macros.append(macro_text)
+                    
+                    # Format the section data
+                    section_data = {
+                        'name': criteria.section_name,
+                        'feedback': section_feedback,
+                        'macros': section_macros
+                    }
+                    feedback_sections.append(section_data)
         
-        # Add mark if provided
-        if mark is not None:
-            prompt_parts.append(f"Overall mark: {mark}")
+        # Format feedback sections for the prompt
+        formatted_sections = []
+        for section in feedback_sections:
+            section_text = f"# {section['name']}\n"
+            if section['feedback']:
+                section_text += f"Core feedback: {section['feedback']}\n"
+            if section['macros']:
+                section_text += "Additional feedback:\n"
+                for macro in section['macros']:
+                    section_text += f"- {macro}\n"
+            formatted_sections.append(section_text)
         
-        # Add applied macros if any
-        if applied_macros:
-            macros = FeedbackMacro.query.filter(FeedbackMacro.id.in_(applied_macros)).all()
-            if macros:
-                prompt_parts.append("\nApplied feedback macros:")
-                for macro in macros:
-                    prompt_parts.append(f"- {macro.name}: {macro.text}")
-        
-        # Build the final prompt
-        feedback_text = "\n".join(prompt_parts)
+        # Join all sections with newlines
+        feedback_text = "\n\n".join(formatted_sections)
         
         # Use prompt loader to create the prompt and get system message
-        prompt, system_msg = prompt_loader.create_prompt(
-            'polish_feedback_prompt',
-            feedback_to_polish=feedback_text
-        )
+        prompt, system_msg = prompt_loader.create_prompt('polish_feedback_prompt')
+        
+        # Fill in dynamic content
+        prompt.add_section('feedback_sections', feedback_text)
+        if mark is not None:
+            prompt.add_section('overall_mark', f"Overall mark: {mark}%")
         
         # Generate consolidated feedback using the selected model
         consolidated_feedback = llm_service.generate_response(
@@ -580,7 +606,8 @@ def generate_consolidated_feedback():
             'consolidated_feedback': consolidated_feedback
         })
     except Exception as e:
-        print(f"Error generating consolidated feedback: {str(e)}")
+        app.logger.error(f"Error in generate_consolidated_feedback: {str(e)}")
+        app.logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/save_additional_feedback/<file_hash>', methods=['POST'])

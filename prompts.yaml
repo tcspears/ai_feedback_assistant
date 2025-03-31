@@ -14,18 +14,36 @@ polish_feedback_prompt:
   system_msg: "You are an experienced academic writing specialist who excels at polishing feedback while maintaining its substance. Format all responses in Markdown."
   sections:
     task_description:
-      content: "Polish and enhance the following feedback statement by converting it from bullet points into prose."
-    feedback_to_polish:
-      content: null  # Will be filled dynamically
+      content: "Polish and enhance the following feedback by organizing it into clear sections for each marking criterion, followed by overall comments. Each section should consolidate the core feedback and any additional feedback macros for that criterion."
+    feedback_sections:
+      content: null  # Will be filled dynamically with criterion-specific feedback and macros
+    overall_mark:
+      content: "Overall mark: {mark}"  # Will be filled dynamically
     detailed_instructions:
       subsections:
-        goal: "Make the feedback more cohesive, professional, and well-structured while preserving the language and tone of the core feedback."
+        goal: "Create a well-structured feedback document with clear sections for each criterion and an overall summary."
         requirements: |
-          1. Do not hallucinate.
-          2. Maintain, word-for-word, the core feedback and the additional feedback provided by the grader. These sections are indicated by the <core_feedback> and </core_feedback> tags and the <additional_feedback> and </additional_feedback> tags respectively. You may re-arrange these parts to improve coherence and flow but do not deviate from the original content.  
-          3. Next, selectively add feedback from the additional feedback section, indicated by the <additional_feedback> and </additional_feedback> tags.
-          4. In consolidating these sections, adjust the additional feedback to match the tone, style, and presentation of the core feedback.
-          5. Do not repeat points already covered in the core feedback.
+          1. Create a separate section for each marking criterion (e.g., "Analysis", "Structure", etc.)
+          2. Within each section:
+             - Combine the core feedback for that criterion
+             - Integrate any relevant feedback macros for that criterion
+             - Present the feedback in clear, professional prose
+          3. End with an "Overall Comments" section that:
+             - Provides a brief summary of the essay's strengths and weaknesses
+             - Relates these to the overall mark given
+             - Suggests key areas for improvement
+          4. Do not hallucinate or add new content not present in the original feedback
+          5. Maintain consistent tone and style throughout
+          6. Use appropriate Markdown formatting for headers and emphasis
+        format: |
+          # [Criterion Name]
+          [Polished feedback for this criterion]
+
+          # [Next Criterion Name]
+          [Polished feedback for this criterion]
+
+          # Overall Comments
+          [Brief summary and key areas for improvement]
 
 moderate_feedback_prompt:
   system_msg: "You are a senior academic with expertise in the subject matter of the essay below. Format all responses in Markdown."
