@@ -514,6 +514,29 @@ def save_mark(file_hash):
         return jsonify({"success": False, "error": str(e)})
 
 
+def get_grade_descriptor_for_mark(mark):
+    """
+    Get the grade descriptor that corresponds to a specific mark.
+    
+    Args:
+        mark (float): The mark to get the descriptor for (0-100)
+        
+    Returns:
+        str: The grade descriptor text, or None if no matching descriptor is found
+    """
+    if mark is None or not (0 <= mark <= 100):
+        return None
+        
+    # Get all descriptors ordered by range_start descending
+    descriptors = GradeDescriptors.query.order_by(GradeDescriptors.range_start.desc()).all()
+    
+    # Find the first descriptor where the mark falls within its range
+    for descriptor in descriptors:
+        if descriptor.range_start <= mark <= descriptor.range_end:
+            return descriptor.descriptor_text
+            
+    return None
+
 @app.route('/generate_consolidated_feedback', methods=['POST'])
 @login_required
 def generate_consolidated_feedback():
@@ -585,11 +608,25 @@ def generate_consolidated_feedback():
         # Join all sections with newlines
         feedback_text = "\n\n".join(formatted_sections)
         
-        # Use prompt loader to create the prompt and get system message
-        prompt, system_msg = prompt_loader.create_prompt('polish_feedback_prompt')
+        # Get the overall mark and corresponding grade descriptor if we need to align the feedback
+        overall_mark = None
+        grade_descriptor = None
+        if align_to_mark:
+            saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+            if saved_feedback and saved_feedback.mark is not None:
+                overall_mark = saved_feedback.mark
+                grade_descriptor = get_grade_descriptor_for_mark(overall_mark)
         
-        # Fill in dynamic content
-        prompt.add_section('feedback_sections', feedback_text)
+        # Use prompt loader to create the prompt and get system message
+        if align_to_mark and overall_mark is not None:
+            prompt, system_msg = prompt_loader.create_prompt('align_feedback_prompt')
+            prompt.add_section('mark', str(overall_mark))
+            prompt.add_section('feedback', feedback_text)
+            if grade_descriptor:
+                prompt.add_section('grade_descriptor', grade_descriptor)
+        else:
+            prompt, system_msg = prompt_loader.create_prompt('polish_feedback_prompt')
+            prompt.add_section('feedback_sections', feedback_text)
         
         # Generate consolidated feedback using the selected model
         consolidated_feedback = llm_service.generate_response(

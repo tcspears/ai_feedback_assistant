@@ -81,19 +81,22 @@ align_feedback_prompt:
       content: "Review and adjust the following feedback to ensure it aligns with the numerical mark of {mark}%."
     feedback:
       content: null  # Will be filled dynamically
+    grade_descriptor:
+      content: "The grade descriptor for this mark range is:\n{grade_descriptor}"  # Will be filled dynamically
     detailed_instructions:
       subsections:
-        goal: "Ensure the tone, emphasis, and content of the feedback accurately reflect the numerical mark given."
+        goal: "Ensure the tone, emphasis, and content of the feedback accurately reflect the numerical mark given and align with the grade descriptor."
         requirements: |
           1. Do not hallucinate or add new content not present in the original feedback.
           2. Maintain the core feedback provided by the grader, especially any section titled '--- Applied Feedback Macros ---'.
-          3. Adjust the tone to match the mark:
+          3. Adjust the tone to match the mark and grade descriptor:
              - For high marks (70%+): Emphasize strengths, frame weaknesses as minor areas for improvement
              - For mid-range marks (50-69%): Balance strengths and weaknesses equally
              - For low marks (<50%): Acknowledge strengths but clearly explain the significant weaknesses
           4. Do not change the substance of the feedback, only adjust emphasis and tone.
           5. Preserve all specific examples and citations from the original feedback.
-        formatting: "Maintain the original Markdown formatting with appropriate headers and styling." 
+          6. Ensure the feedback aligns with the grade descriptor's expectations for this mark range.
+        formatting: "Maintain the original Markdown formatting with appropriate headers and styling."
 
 criterion_moderation_prompt:
   system_msg: "You are a senior academic with expertise in evaluating essay feedback against specific grading criteria. You must respond with a valid JSON object containing your decision and reasoning."
