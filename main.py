@@ -260,28 +260,6 @@ def paper(file_hash):
     # Get the upload time for this file
     upload_time = paper.created_at
     
-    # Calculate average grading time for this rubric
-    avg_time = (db.session.query(func.avg(
-        func.strftime('%s', SavedFeedback.updated_at) - 
-        func.strftime('%s', Paper.created_at)
-    ))
-    .select_from(Paper)
-    .join(SavedFeedback)
-    .join(Evaluation, Evaluation.paper_id == Paper.id)
-    .join(RubricCriteria, RubricCriteria.id == Evaluation.criteria_id)
-    .filter(
-        RubricCriteria.rubric_id == current_rubric_id[0],
-        SavedFeedback.updated_at.isnot(None)
-    )
-    .scalar())
-    
-    # Format average time as HH:MM:SS
-    if avg_time:
-        avg_seconds = int(avg_time)  # Now avg_time is already in seconds
-        average_time = f"{avg_seconds // 3600:02d}:{(avg_seconds % 3600) // 60:02d}:{avg_seconds % 60:02d}"
-    else:
-        average_time = None
-
     return render_template('paper.html',
                          filename=paper.filename,
                          full_text=paper.full_text,
@@ -294,7 +272,6 @@ def paper(file_hash):
                          saved_consolidated_feedback=saved_feedback.consolidated_feedback if saved_feedback else None,
                          pdf_path=paper.pdf_path.replace('static/', ''),
                          upload_time=upload_time.isoformat(),
-                         average_time=average_time,
                          moderation_session=moderation_session,
                          criterion_feedback=criterion_feedback)
 
@@ -1764,19 +1741,37 @@ def export_rubric(rubric_id):
         rubric = Rubric.query.get_or_404(rubric_id)
         criteria = RubricCriteria.query.filter_by(rubric_id=rubric_id).order_by(RubricCriteria.id).all()
         
-        # Create a dictionary with all rubric data including weights
+        # Create a dictionary with all rubric data including weights and macros
         rubric_data = {
             "name": rubric.name,
             "description": rubric.description,
-            "criteria": [
-                {
-                    "section_name": c.section_name,
-                    "criteria_text": c.criteria_text,
-                    "weight": c.weight
-                }
-                for c in criteria
-            ]
+            "criteria": []
         }
+        
+        # Add criteria with their associated macros
+        for criterion in criteria:
+            criterion_data = {
+                "section_name": criterion.section_name,
+                "criteria_text": criterion.criteria_text,
+                "weight": criterion.weight,
+                "macros": []
+            }
+            
+            # Get macros for this criterion
+            macros = FeedbackMacro.query.filter_by(
+                rubric_id=rubric_id,
+                criteria_id=criterion.id
+            ).all()
+            
+            # Add macros to criterion data
+            for macro in macros:
+                criterion_data["macros"].append({
+                    "name": macro.name,
+                    "category": macro.category,
+                    "text": macro.text
+                })
+            
+            rubric_data["criteria"].append(criterion_data)
         
         return jsonify({
             "success": True,
@@ -1804,7 +1799,7 @@ def import_rubric():
         db.session.add(rubric)
         db.session.flush()  # Get the rubric_id
         
-        # Add criteria with weights
+        # Add criteria with weights and macros
         total_weight = 0
         criteria_list = []
         
@@ -1824,6 +1819,22 @@ def import_rubric():
             )
             criteria_list.append(criterion)
             db.session.add(criterion)
+            db.session.flush()  # Get the criterion ID
+            
+            # Add macros for this criterion if any exist
+            macros = criterion_data.get('macros', [])
+            for macro_data in macros:
+                if not macro_data.get('name') or not macro_data.get('text'):
+                    continue
+                    
+                macro = FeedbackMacro(
+                    rubric_id=rubric.id,
+                    criteria_id=criterion.id,
+                    name=macro_data['name'],
+                    category=macro_data.get('category', 'general'),
+                    text=macro_data['text']
+                )
+                db.session.add(macro)
         
         # Validate total weight is close to 1
         if abs(total_weight - 1) > 0.0001:
@@ -1922,6 +1933,40 @@ def delete_macro(macro_id):
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error deleting macro: {str(e)}")
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/delete_paper/<file_hash>', methods=['POST'])
+@login_required
+def delete_paper(file_hash):
+    try:
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Delete PDF file if it exists
+        if os.path.exists(paper.pdf_path):
+            os.remove(paper.pdf_path)
+        
+        # Delete related records first
+        Chat.query.filter_by(paper_id=paper.id).delete()
+        Evaluation.query.filter_by(paper_id=paper.id).delete()
+        SavedFeedback.query.filter_by(paper_id=paper.id).delete()
+        AppliedMacro.query.filter_by(paper_id=paper.id).delete()
+        AIEvaluation.query.filter_by(paper_id=paper.id).delete()
+        
+        # Delete any moderation sessions and results
+        moderation_sessions = ModerationSession.query.filter_by(paper_id=paper.id).all()
+        for session in moderation_sessions:
+            ModerationResult.query.filter_by(session_id=session.id).delete()
+            db.session.delete(session)
+        
+        # Finally delete the paper
+        db.session.delete(paper)
+        db.session.commit()
+        
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting paper: {str(e)}")
         return jsonify({"success": False, "error": str(e)})
 
 if __name__ == '__main__':
