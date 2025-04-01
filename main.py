@@ -37,7 +37,7 @@ import mimetypes  # For detecting file types
 from services.llm_service import LLMService
 from models.database import (
     db, User, Paper, Rubric, RubricCriteria, Evaluation, 
-    Chat, GradeDescriptors, SavedFeedback, FeedbackMacro, AppliedMacro, ModerationSession, CriterionFeedback, ModerationResult, AIEvaluation
+    Chat, GradeDescriptors, SavedFeedback, FeedbackMacro, AppliedMacro, ModerationSession, CriterionFeedback, ModerationResult, AIEvaluation, MacroCategory
 )
 from utils.prompt_builder import StructuredPrompt
 from utils.prompt_loader import PromptLoader
@@ -2033,6 +2033,84 @@ def delete_paper(file_hash):
         db.session.rollback()
         app.logger.error(f"Error deleting paper: {str(e)}")
         return jsonify({"success": False, "error": str(e)})
+
+@app.route('/get_macro_categories/<int:rubric_id>')
+@login_required
+def get_macro_categories(rubric_id):
+    try:
+        categories = MacroCategory.query.filter_by(rubric_id=rubric_id).all()
+        return jsonify({
+            'success': True,
+            'categories': [{'id': cat.id, 'name': cat.name} for cat in categories]
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting macro categories: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/add_macro_category/<int:rubric_id>', methods=['POST'])
+@login_required
+def add_macro_category(rubric_id):
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        if not name:
+            return jsonify({'success': False, 'error': 'Category name is required'})
+
+        category = MacroCategory(
+            rubric_id=rubric_id,
+            name=name
+        )
+        db.session.add(category)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'category': {'id': category.id, 'name': category.name}
+        })
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error adding macro category: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/update_macro_category/<int:category_id>', methods=['POST'])
+@login_required
+def update_macro_category(category_id):
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        if not name:
+            return jsonify({'success': False, 'error': 'Category name is required'})
+
+        category = MacroCategory.query.get_or_404(category_id)
+        category.name = name
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'category': {'id': category.id, 'name': category.name}
+        })
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating macro category: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/delete_macro_category/<int:category_id>', methods=['POST'])
+@login_required
+def delete_macro_category(category_id):
+    try:
+        category = MacroCategory.query.get_or_404(category_id)
+        
+        # Update any macros using this category to use null category_id
+        FeedbackMacro.query.filter_by(category_id=category_id).update({'category_id': None})
+        
+        db.session.delete(category)
+        db.session.commit()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting macro category: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")

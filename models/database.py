@@ -84,6 +84,18 @@ class CriterionFeedback(db.Model):
     mark = db.Column(db.Float)  # Mark for this specific criterion
     updated_at = db.Column(db.DateTime, nullable=False, default=func.now())
 
+class MacroCategory(db.Model):
+    """Stores custom categories for feedback macros, specific to each rubric."""
+    __tablename__ = 'macro_categories'
+    id = db.Column(db.Integer, primary_key=True)
+    rubric_id = db.Column(db.Integer, db.ForeignKey('rubrics.id'), nullable=False)
+    name = db.Column(db.String(50), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=func.now())
+    # Add relationship to rubric
+    rubric = db.relationship('Rubric', backref='macro_categories')
+    # Add relationship to macros
+    macros = db.relationship('FeedbackMacro', backref='category_ref', lazy=True)
+
 class FeedbackMacro(db.Model):
     """Stores feedback macros that can be reused across papers with the same rubric."""
     __tablename__ = 'feedback_macros'
@@ -92,7 +104,7 @@ class FeedbackMacro(db.Model):
     criteria_id = db.Column(db.Integer, db.ForeignKey('rubric_criteria.id'), nullable=True)  # Null means general macro
     name = db.Column(db.String(255), nullable=False)  # Short name for the macro (e.g., "poor thesis")
     text = db.Column(db.Text, nullable=False)  # The text to insert when the macro is used
-    category = db.Column(db.String(50), nullable=False, default='general')  # Category for grouping/coloring
+    category_id = db.Column(db.Integer, db.ForeignKey('macro_categories.id'), nullable=True)  # Link to custom category
     created_at = db.Column(db.DateTime, nullable=False, default=func.now())
 
 class AppliedMacro(db.Model):
