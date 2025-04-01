@@ -436,6 +436,41 @@
             color: #dc3545;
         }
         
+        .moderation-result-box .result-status {
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .moderation-result-box .mark-info {
+            text-align: center;
+            font-size: 14px;
+            margin-top: 5px;
+            font-weight: normal;
+            color: var(--text-color);
+        }
+        
+        .moderation-reasoning {
+            margin-top: 10px;
+            padding: 15px;
+            background-color: rgba(0, 0, 0, 0.05);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .moderation-reasoning h5 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: var(--text-color);
+        }
+        
+        .reasoning-content {
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--text-color);
+        }
+        
         .moderation-actions {
             display: flex;
             gap: 10px;
@@ -541,6 +576,210 @@
             background-color: var(--summary-bg);
             color: var(--text-color);
         }
+        
+        .status-message {
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .status-message.success {
+            background-color: rgba(40, 167, 69, 0.1);
+            border-color: #28a745;
+        }
+        
+        .status-message.error {
+            background-color: rgba(220, 53, 69, 0.1);
+            border-color: #dc3545;
+        }
+        
+        .status-message h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        
+        .status-message p {
+            margin: 5px 0;
+        }
+        
+        .moderation-info-box {
+            background-color: rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .moderation-info-box p {
+            margin: 0 0 10px 0;
+        }
+        
+        .moderation-info-box ul {
+            margin: 0 0 10px 20px;
+            padding: 0;
+        }
+        
+        .moderation-info-box li {
+            margin-bottom: 5px;
+        }
+        
+        /* Context Menu Styles */
+        .context-menu {
+            display: none;
+            position: absolute;
+            z-index: 1000;
+            background-color: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            min-width: 150px;
+        }
+        
+        .context-menu ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .context-menu li {
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .context-menu li:hover {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        /* Make macro buttons show right-click cursor */
+        .macro-button {
+            cursor: context-menu;
+        }
+        
+        /* Criteria description box styles */
+        .criteria-description-box {
+            margin-bottom: 10px;
+        }
+        
+        .criteria-label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .criteria-text {
+            width: 100%;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 8px;
+            background-color: rgba(0, 0, 0, 0.02);
+            color: var(--text-color);
+            font-size: 14px;
+            line-height: 1.4;
+            resize: none;
+            overflow-y: auto;
+            font-family: inherit;
+        }
+        
+        .criteria-text:focus {
+            outline: none;
+        }
+
+        /* AI Assist Tab Styles */
+        .ai-assist-section {
+            padding: 20px;
+            background: var(--container-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .ai-assist-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .ai-assist-header h3 {
+            margin: 0;
+            color: var(--primary-color);
+        }
+
+        .model-select-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .model-select-container label {
+            color: var(--text-color);
+        }
+
+        #aiModelSelect {
+            padding: 8px;
+            background: var(--summary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-color);
+        }
+
+        .ai-evaluations-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .ai-evaluation-section {
+            background: var(--summary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 15px;
+        }
+
+        .ai-evaluation-section h4 {
+            margin: 0 0 15px 0;
+            color: var(--primary-color);
+        }
+
+        .ai-evaluation-content {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .ai-evaluation-text {
+            margin-bottom: 10px;
+        }
+
+        .ai-evaluation-mark {
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .ai-evaluation-reasoning {
+            font-style: italic;
+            color: var(--text-color);
+            opacity: 0.8;
+        }
+
+        .generate-ai-evaluation-btn {
+            align-self: flex-start;
+            padding: 8px 16px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .generate-ai-evaluation-btn:hover {
+            background: var(--hover-color);
+        }
     </style>
 </head>
 <body>
@@ -577,48 +816,49 @@
             <div class="evaluations-panel">
                 <!-- Tab Navigation -->
                 <div class="tab-navigation">
-                    <button class="tab-button active" onclick="switchTab('marking')">Marking</button>
-                    <button class="tab-button" onclick="switchTab('moderation')">Moderation</button>
+                    <button class="tab-button active" data-tab="marking">Marking</button>
+                    <button class="tab-button" data-tab="ai-assist">AI Assist</button>
+                    <button class="tab-button" data-tab="moderation">Moderation</button>
                 </div>
 
                 <!-- Marking Tab Content -->
-                <div id="marking-tab" class="tab-content active">
+                <div class="tab-content active" id="marking-content">
                     <!-- Criteria-specific Evaluations -->
                     {% for evaluation in evaluations %}
                     <div class="evaluation-section">
-                        <h3>{{ evaluation.section_name }}</h3>
-                        
-                        <!-- Single Feedback Section -->
-                        <div class="feedback-section">
-                            <div class="feedback-header">
-                                <h4>Feedback</h4>
-                                <div class="mark-input-container">
-                                    <label>Mark (0-100):</label>
-                                    <input type="number" class="criterion-mark-input" 
-                                           min="0" max="100" step="0.1" 
-                                           data-criteria-id="{{ evaluation.criteria_id }}"
-                                           data-weight="{{ evaluation.weight }}"
-                                           value="{{ criterion_feedback[evaluation.criteria_id].mark if criterion_feedback[evaluation.criteria_id] else '' }}">
-                                </div>
+                        <div class="feedback-header">
+                            <h3>{{ evaluation.section_name }}</h3>
+                            <div class="mark-input-container">
+                                <label>Mark (0-100):</label>
+                                <input type="number" class="criterion-mark-input" 
+                                       min="0" max="100" step="0.1" 
+                                       data-criteria-id="{{ evaluation.criteria_id }}"
+                                       data-weight="{{ evaluation.weight }}"
+                                       value="{{ criterion_feedback[evaluation.criteria_id].mark if criterion_feedback[evaluation.criteria_id] else '' }}">
                             </div>
-                            
-                            <!-- Feedback Macros -->
-                            <div class="feedback-macros">
-                                <div class="macros-header">
-                                    <h5>Feedback Macros</h5>
-                                    <button class="add-macro-btn" onclick="showAddMacroModal('{{ evaluation.criteria_id }}')" title="Add a new macro">+</button>
-                                </div>
-                                <div id="macroButtonsContainer-{{ evaluation.criteria_id }}" class="macro-buttons-container">
-                                    <!-- Macro buttons will be loaded here -->
-                                    <div class="loading-macros">Loading macros...</div>
-                                </div>
-                            </div>
-                            
-                            <textarea class="feedback-input" 
-                                      data-evaluation-id="{{ evaluation.id }}"
-                                      data-criteria-id="{{ evaluation.criteria_id }}"
-                                      placeholder="Enter feedback for this criterion...">{{ criterion_feedback[evaluation.criteria_id].feedback_text if criterion_feedback[evaluation.criteria_id] else evaluation.evaluation_text }}</textarea>
                         </div>
+                        
+                        <!-- Marking Criteria Description -->
+                        <div class="criteria-description-box">
+                            <label class="criteria-label">Marking Criteria:</label>
+                            <textarea class="criteria-text" rows="3" readonly>{{ evaluation.criteria_text }}</textarea>
+                        </div>
+                        
+                        <!-- Feedback Macros -->
+                        <div class="feedback-macros">
+                            <div class="macros-header">
+                                <button class="add-macro-btn" onclick="showAddMacroModal('{{ evaluation.criteria_id }}')" title="Add a new macro">+</button>
+                            </div>
+                            <div id="macroButtonsContainer-{{ evaluation.criteria_id }}" class="macro-buttons-container">
+                                <!-- Macro buttons will be loaded here -->
+                                <div class="loading-macros">Loading macros...</div>
+                            </div>
+                        </div>
+                        
+                        <textarea class="feedback-input" 
+                                  data-evaluation-id="{{ evaluation.id }}"
+                                  data-criteria-id="{{ evaluation.criteria_id }}"
+                                  placeholder="Enter feedback for this criterion...">{{ criterion_feedback[evaluation.criteria_id].feedback_text if criterion_feedback[evaluation.criteria_id] else evaluation.evaluation_text }}</textarea>
                     </div>
                     {% endfor %}
 
@@ -687,10 +927,54 @@
                     </div>
                 </div>
 
+                <!-- AI Assist Tab Content -->
+                <div class="tab-content" id="ai-assist-content">
+                    <div class="ai-assist-section">
+                        <div class="ai-assist-header">
+                            <h3>AI Second Marker Evaluation</h3>
+                            <div class="model-select-container">
+                                <label for="aiModelSelect">Select AI Model:</label>
+                                <select id="aiModelSelect">
+                                    <option value="gpt-4">GPT-4</option>
+                                    <option value="claude-3-opus">Claude 3 Opus</option>
+                                    <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="ai-evaluations-container">
+                            {% for evaluation in evaluations %}
+                                {% if evaluation.criteria_id %}
+                                    <div class="ai-evaluation-section" data-criteria-id="{{ evaluation.criteria_id }}">
+                                        <h4>{{ evaluation.section_name }}</h4>
+                                        <div class="ai-evaluation-content">
+                                            <div class="ai-evaluation-text markdown-rendered"></div>
+                                            <div class="ai-evaluation-mark"></div>
+                                            <div class="ai-evaluation-reasoning"></div>
+                                            <button class="generate-ai-evaluation-btn">Generate AI Evaluation</button>
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Moderation Tab Content -->
-                <div id="moderation-tab" class="tab-content">
+                <div class="tab-content" id="moderation-content">
                     <div class="moderation-section">
                         <h3>Feedback Moderation</h3>
+                        
+                        <div class="moderation-info-box">
+                            <p>This tab evaluates your feedback against academic standards using AI. Each criterion will be assessed for:</p>
+                            <ul>
+                                <li>Alignment with the rubric criteria</li>
+                                <li>Appropriateness for the given mark</li>
+                                <li>Quality of examples and justification</li>
+                                <li>Academic language and clarity</li>
+                            </ul>
+                            <p>Results will show whether each criterion's feedback PASSES or FAILS the assessment with detailed reasoning.</p>
+                        </div>
                         
                         <!-- Model Selection -->
                         <div class="model-select-container">
@@ -706,8 +990,6 @@
                         <!-- Moderation Controls -->
                         <div class="moderation-controls">
                             <button id="startModeration" onclick="startModeration()">Start Moderation</button>
-                            <button id="completeModeration" style="display: none;" onclick="completeModeration()">Accept All Changes</button>
-                            <button id="rejectModeration" style="display: none;" onclick="rejectModeration()">Reject All Changes</button>
                         </div>
 
                         <!-- Moderation Status -->
@@ -718,12 +1000,19 @@
                             {% for evaluation in evaluations %}
                             <div class="criterion-moderation" data-criteria-id="{{ evaluation.criteria_id }}">
                                 <h4>{{ evaluation.section_name }}</h4>
+                                
+                                <!-- Marking Criteria Description for Moderation -->
+                                <div class="criteria-description-box">
+                                    <label class="criteria-label">Marking Criteria:</label>
+                                    <textarea class="criteria-text" rows="3" readonly>{{ evaluation.criteria_text }}</textarea>
+                                </div>
+                                
                                 <div class="moderation-result-box">
                                     <div class="result-status">Pending moderation...</div>
                                 </div>
-                                <div class="moderation-actions" style="display: none;">
-                                    <button class="accept-changes" onclick="acceptCriterionChanges('{{ evaluation.criteria_id }}')">Accept</button>
-                                    <button class="reject-changes" onclick="rejectCriterionChanges('{{ evaluation.criteria_id }}')">Reject</button>
+                                <div class="moderation-reasoning" style="display:none;">
+                                    <h5>Reasoning:</h5>
+                                    <div class="reasoning-content"></div>
                                 </div>
                             </div>
                             {% endfor %}
@@ -873,11 +1162,34 @@
             });
         }
         
-        // Close the modal when clicking outside of it
+        // Handle category select change for normal and edit modals
+        const categorySelect = document.getElementById('macroCategory');
+        const customContainer = document.getElementById('customCategoryContainer');
+        
+        if (categorySelect) {
+            categorySelect.addEventListener('change', function() {
+                customContainer.style.display = this.value === 'custom' ? 'block' : 'none';
+            });
+        }
+        
+        const editCategorySelect = document.getElementById('editMacroCategory');
+        const editCustomContainer = document.getElementById('editCustomCategoryContainer');
+        
+        if (editCategorySelect) {
+            editCategorySelect.addEventListener('change', function() {
+                editCustomContainer.style.display = this.value === 'custom' ? 'block' : 'none';
+            });
+        }
+        
+        // Close modal when clicking outside
         window.onclick = function(event) {
-            const modal = document.getElementById('macroModal');
-            if (event.target === modal) {
+            const macroModal = document.getElementById('macroModal');
+            const editMacroModal = document.getElementById('editMacroModal');
+            
+            if (event.target === macroModal) {
                 closeModal();
+            } else if (event.target === editMacroModal) {
+                closeEditModal();
             }
         };
 
@@ -899,6 +1211,18 @@
 
         // Calculate the weighted mark on page load
         setTimeout(calculateAndShowWeightedMark, 500);
+        
+        // Check if we're on the moderation tab and load results if so
+        const moderationTab = document.getElementById('moderation-tab');
+        if (moderationTab && moderationTab.classList.contains('active')) {
+            loadModerationResults();
+        }
+        
+        // Setup context menu for macros
+        const contextMenu = document.getElementById('macroContextMenu');
+        if (contextMenu) {
+            setupMacroContextMenu();
+        }
     });
 
     function sendMessage() {
@@ -1486,6 +1810,208 @@
         }
     }
 
+    // Add context menu handlers for macros
+    let currentContextMenuButton = null;
+    
+    function setupMacroContextMenu() {
+        const contextMenu = document.getElementById('macroContextMenu');
+        const editMenuItem = document.getElementById('editMacroMenuItem');
+        const deleteMenuItem = document.getElementById('deleteMacroMenuItem');
+        
+        if (!contextMenu || !editMenuItem || !deleteMenuItem) {
+            console.error('Context menu elements not found');
+            return;
+        }
+        
+        // Add click handlers for menu items
+        editMenuItem.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (currentContextMenuButton) {
+                editMacro(currentContextMenuButton);
+            }
+            hideContextMenu();
+        });
+        
+        deleteMenuItem.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (currentContextMenuButton) {
+                deleteMacro(currentContextMenuButton);
+            }
+            hideContextMenu();
+        });
+        
+        // Close the context menu when clicking elsewhere
+        document.addEventListener('click', (e) => {
+            if (!contextMenu.contains(e.target)) {
+                hideContextMenu();
+            }
+        });
+        
+        // Prevent default context menu on macro buttons
+        document.addEventListener('contextmenu', (e) => {
+            if (e.target.classList.contains('macro-button')) {
+                e.preventDefault();
+                e.stopPropagation();
+                showContextMenu(e.target, e.clientX, e.clientY);
+            } else {
+                hideContextMenu();
+            }
+        });
+
+        // Prevent context menu from showing when clicking inside it
+        contextMenu.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+    }
+    
+    function showContextMenu(button, x, y) {
+        currentContextMenuButton = button;
+        const contextMenu = document.getElementById('macroContextMenu');
+        contextMenu.style.display = 'block';
+        
+        // Position the menu, making sure it stays within the viewport
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        const menuWidth = contextMenu.offsetWidth;
+        const menuHeight = contextMenu.offsetHeight;
+        
+        // Adjust if menu would go outside right edge
+        if (x + menuWidth > windowWidth) {
+            x = windowWidth - menuWidth - 5;
+        }
+        
+        // Adjust if menu would go outside bottom edge
+        if (y + menuHeight > windowHeight) {
+            y = windowHeight - menuHeight - 5;
+        }
+        
+        contextMenu.style.left = x + 'px';
+        contextMenu.style.top = y + 'px';
+    }
+    
+    function hideContextMenu() {
+        document.getElementById('macroContextMenu').style.display = 'none';
+        currentContextMenuButton = null;
+    }
+    
+    // Edit macro function
+    function editMacro(button) {
+        const macroId = button.dataset.id;
+        const macroName = button.textContent;
+        const macroCategory = button.dataset.category;
+        const macroText = button.dataset.text;
+        
+        // Populate the edit form
+        document.getElementById('editMacroId').value = macroId;
+        document.getElementById('editMacroName').value = macroName;
+        document.getElementById('editMacroText').value = macroText;
+        
+        // Set the correct category
+        const categorySelect = document.getElementById('editMacroCategory');
+        let categoryFound = false;
+        
+        for (let i = 0; i < categorySelect.options.length; i++) {
+            if (categorySelect.options[i].value === macroCategory) {
+                categorySelect.selectedIndex = i;
+                categoryFound = true;
+                break;
+            }
+        }
+        
+        // If it's a custom category
+        if (!categoryFound && macroCategory !== 'custom') {
+            categorySelect.value = 'custom';
+            document.getElementById('editCustomCategory').value = macroCategory;
+            document.getElementById('editCustomCategoryContainer').style.display = 'block';
+        } else {
+            document.getElementById('editCustomCategoryContainer').style.display = 'none';
+        }
+        
+        // Show the edit modal
+        document.getElementById('editMacroModal').style.display = 'block';
+    }
+    
+    function closeEditModal() {
+        document.getElementById('editMacroModal').style.display = 'none';
+    }
+    
+    // Update macro function
+    async function updateMacro() {
+        const macroId = document.getElementById('editMacroId').value;
+        const name = document.getElementById('editMacroName').value.trim();
+        let category = document.getElementById('editMacroCategory').value;
+        const text = document.getElementById('editMacroText').value.trim();
+        
+        if (!name || !text) {
+            alert('Please fill in all required fields');
+            return;
+        }
+        
+        // Handle custom category
+        if (category === 'custom') {
+            category = document.getElementById('editCustomCategory').value.trim();
+            if (!category) {
+                alert('Please enter a custom category name');
+                return;
+            }
+        }
+        
+        try {
+            const response = await fetch(`/update_macro/${macroId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: name,
+                    category: category,
+                    text: text
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                closeEditModal();
+                loadMacros(); // Reload the macros to show the changes
+                alert('Macro updated successfully!');
+            } else {
+                throw new Error(data.error || 'Failed to update macro');
+            }
+        } catch (error) {
+            console.error('Error updating macro:', error);
+            alert('Error updating macro: ' + error.message);
+        }
+    }
+    
+    // Delete macro function
+    async function deleteMacro(button) {
+        if (!confirm('Are you sure you want to delete this macro?')) {
+            return;
+        }
+        
+        const macroId = button.dataset.id;
+        
+        try {
+            const response = await fetch(`/delete_macro/${macroId}`, {
+                method: 'POST'
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                loadMacros(); // Reload the macros to show the changes
+                alert('Macro deleted successfully!');
+            } else {
+                throw new Error(data.error || 'Failed to delete macro');
+            }
+        } catch (error) {
+            console.error('Error deleting macro:', error);
+            alert('Error deleting macro: ' + error.message);
+        }
+    }
+
     async function saveAppliedMacros() {
         try {
             const response = await fetch(`/save_applied_macros/{{ file_hash }}`, {
@@ -1615,6 +2141,63 @@
         
         // Activate selected tab button
         event.target.classList.add('active');
+        
+        // Load moderation results if switching to moderation tab
+        if (tabName === 'moderation') {
+            loadModerationResults();
+        }
+    }
+
+    // Function to load existing moderation results
+    async function loadModerationResults() {
+        try {
+            const response = await fetch(`/get_moderation_feedback/{{ file_hash }}`);
+            const data = await response.json();
+            
+            console.log("Loaded moderation data:", data);
+            
+            if (data.success) {
+                // If there are moderation results, display them
+                if (data.results && Object.keys(data.results).length > 0) {
+                    // Update status to show existing moderation
+                    document.getElementById('moderationStatus').innerHTML = `
+                        <div class="status-message success">
+                            <h4>Previous Moderation Results</h4>
+                            <p>These results were saved from a previous moderation session.</p>
+                        </div>
+                    `;
+                    
+                    // Update each criterion with its result
+                    for (const [criteriaId, result] of Object.entries(data.results)) {
+                        const element = document.querySelector(`.criterion-moderation[data-criteria-id="${criteriaId}"]`);
+                        if (element) {
+                            const resultBox = element.querySelector('.moderation-result-box');
+                            const reasoningDiv = element.querySelector('.moderation-reasoning');
+                            
+                            // Update result box
+                            const criterionMark = getCriterionMark(criteriaId);
+                            const resultDisplay = `
+                                <div class="result-status">${result.result}</div>
+                                ${criterionMark ? `<div class="mark-info">Mark: ${criterionMark}%</div>` : ''}
+                            `;
+                            resultBox.innerHTML = resultDisplay;
+                            resultBox.className = 'moderation-result-box ' + result.result.toLowerCase();
+                            
+                            // Update reasoning if available
+                            if (result.reasoning) {
+                                reasoningDiv.style.display = 'block';
+                                reasoningDiv.querySelector('.reasoning-content').textContent = result.reasoning;
+                            }
+                        }
+                    }
+                    
+                    // Update button text to indicate we can rerun moderation
+                    document.getElementById('startModeration').textContent = 'Run New Moderation';
+                }
+            }
+        } catch (error) {
+            console.error('Error loading moderation results:', error);
+        }
     }
 
     // Add new functions for moderation
@@ -1622,6 +2205,16 @@
         const button = document.getElementById('startModeration');
         button.disabled = true;
         button.textContent = 'Starting...';
+        
+        // Reset all moderation result boxes
+        document.querySelectorAll('.criterion-moderation').forEach(element => {
+            const resultBox = element.querySelector('.moderation-result-box');
+            const reasoningDiv = element.querySelector('.moderation-reasoning');
+            
+            resultBox.innerHTML = `<div class="result-status">Pending moderation...</div>`;
+            resultBox.className = 'moderation-result-box';
+            reasoningDiv.style.display = 'none';
+        });
         
         try {
             const response = await fetch('/start_moderation/{{ file_hash }}', {
@@ -1644,21 +2237,35 @@
                     </div>
                 `;
                 
-                // Show moderation controls
-                document.getElementById('completeModeration').style.display = 'inline-block';
-                document.getElementById('rejectModeration').style.display = 'inline-block';
-                
                 // Start criterion-specific moderation
                 await moderateCriteria();
+                
+                // Update status to show completion
+                document.getElementById('moderationStatus').innerHTML = `
+                    <div class="status-message success">
+                        <h4>Moderation Completed</h4>
+                        <p>Completed at: ${new Date().toLocaleString()}</p>
+                        <p>Review the results above for each criterion.</p>
+                    </div>
+                `;
+                
+                // Update button state
+                button.textContent = 'Run New Moderation';
             } else {
                 throw new Error(data.error || 'Failed to start moderation');
             }
         } catch (error) {
             console.error('Error:', error);
             alert('Error starting moderation: ' + error.message);
+            // Update status to show error
+            document.getElementById('moderationStatus').innerHTML = `
+                <div class="status-message error">
+                    <h4>Moderation Failed</h4>
+                    <p>Error: ${error.message}</p>
+                </div>
+            `;
         } finally {
             button.disabled = false;
-            button.textContent = 'Start Moderation';
         }
     }
 
@@ -1668,9 +2275,13 @@
         for (const element of criterionElements) {
             const criteriaId = element.dataset.criteriaId;
             const resultBox = element.querySelector('.moderation-result-box');
-            const actionsDiv = element.querySelector('.moderation-actions');
+            const reasoningDiv = element.querySelector('.moderation-reasoning');
             
             try {
+                // Update UI to show moderation is in progress
+                resultBox.innerHTML = `<div class="result-status">Moderating...</div>`;
+                resultBox.className = 'moderation-result-box';
+                
                 const response = await fetch(`/moderate_criterion/{{ file_hash }}/${criteriaId}`, {
                     method: 'POST',
                     headers: {
@@ -1682,160 +2293,36 @@
                 });
                 
                 const data = await response.json();
+                // Debug log
+                console.log(`Moderation response for criterion ${criteriaId}:`, data);
+                
                 if (data.success) {
                     // Update result box with PASSES/FAILS status
-                    resultBox.innerHTML = data.result;
+                    const criterionMark = getCriterionMark(criteriaId);
+                    const resultDisplay = `
+                        <div class="result-status">${data.result}</div>
+                        ${criterionMark ? `<div class="mark-info">Mark: ${criterionMark}%</div>` : ''}
+                    `;
+                    resultBox.innerHTML = resultDisplay;
                     resultBox.className = 'moderation-result-box ' + data.result.toLowerCase();
                     
-                    // Show accept/reject buttons
-                    actionsDiv.style.display = 'flex';
+                    // Show reasoning
+                    reasoningDiv.style.display = 'block';
+                    reasoningDiv.querySelector('.reasoning-content').textContent = data.reasoning;
                 } else {
                     throw new Error(data.error || 'Failed to moderate criterion');
                 }
             } catch (error) {
                 console.error('Error:', error);
-                resultBox.innerHTML = 'Error: ' + error.message;
+                resultBox.innerHTML = `<div class="result-status">Error: ${error.message}</div>
+                                    <div class="error-details" style="margin-top: 5px; font-size: 12px; font-weight: normal;">
+                                        Please try again or use a different model. Check browser console for details.
+                                    </div>`;
                 resultBox.className = 'moderation-result-box fails';
+                
+                // Hide reasoning div in case of error
+                reasoningDiv.style.display = 'none';
             }
-        }
-    }
-
-    async function acceptCriterionChanges(criteriaId) {
-        try {
-            const response = await fetch(`/accept_criterion_changes/{{ file_hash }}/${criteriaId}`, {
-                method: 'POST'
-            });
-            
-            const data = await response.json();
-            if (data.success) {
-                // Update the criterion's feedback with the moderated version
-                const criterionElement = document.querySelector(`.criterion-moderation[data-criteria-id="${criteriaId}"]`);
-                const actionsDiv = criterionElement.querySelector('.moderation-actions');
-                actionsDiv.style.display = 'none';
-                
-                // Update the feedback textarea if it exists
-                const textarea = document.getElementById(`feedback-${criteriaId}`);
-                if (textarea && data.moderated_feedback) {
-                    textarea.value = data.moderated_feedback;
-                }
-            } else {
-                throw new Error(data.error || 'Failed to accept changes');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error accepting changes: ' + error.message);
-        }
-    }
-
-    async function rejectCriterionChanges(criteriaId) {
-        try {
-            const response = await fetch(`/reject_criterion_changes/{{ file_hash }}/${criteriaId}`, {
-                method: 'POST'
-            });
-            
-            const data = await response.json();
-            if (data.success) {
-                // Hide the actions div
-                const criterionElement = document.querySelector(`.criterion-moderation[data-criteria-id="${criteriaId}"]`);
-                const actionsDiv = criterionElement.querySelector('.moderation-actions');
-                actionsDiv.style.display = 'none';
-                
-                // Update result box to show rejected status
-                const resultBox = criterionElement.querySelector('.moderation-result-box');
-                resultBox.innerHTML = 'Moderation rejected';
-                resultBox.className = 'moderation-result-box';
-            } else {
-                throw new Error(data.error || 'Failed to reject changes');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error rejecting changes: ' + error.message);
-        }
-    }
-
-    async function completeModeration() {
-        if (!confirm('Are you sure you want to accept all moderated feedback? This will apply all pending changes.')) {
-            return;
-        }
-        
-        try {
-            const response = await fetch('/complete_moderation/{{ file_hash }}', {
-                method: 'POST'
-            });
-            
-            const data = await response.json();
-            if (data.success) {
-                // Update all criterion feedback with moderated versions
-                if (data.moderated_feedback) {
-                    for (const [criteriaId, feedback] of Object.entries(data.moderated_feedback)) {
-                        const textarea = document.getElementById(`feedback-${criteriaId}`);
-                        if (textarea) {
-                            textarea.value = feedback;
-                        }
-                    }
-                }
-                
-                // Update status
-                document.getElementById('moderationStatus').innerHTML = `
-                    <div class="status-message success">
-                        <h4>Moderation Completed</h4>
-                        <p>All changes accepted at: ${new Date().toLocaleString()}</p>
-                    </div>
-                `;
-                
-                // Hide all moderation controls
-                document.getElementById('completeModeration').style.display = 'none';
-                document.getElementById('rejectModeration').style.display = 'none';
-                document.querySelectorAll('.moderation-actions').forEach(div => {
-                    div.style.display = 'none';
-                });
-            } else {
-                throw new Error(data.error || 'Failed to complete moderation');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error completing moderation: ' + error.message);
-        }
-    }
-
-    async function rejectModeration() {
-        if (!confirm('Are you sure you want to reject all moderated feedback? This will discard all pending changes.')) {
-            return;
-        }
-        
-        try {
-            const response = await fetch('/reject_moderation/{{ file_hash }}', {
-                method: 'POST'
-            });
-            
-            const data = await response.json();
-            if (data.success) {
-                // Update status
-                document.getElementById('moderationStatus').innerHTML = `
-                    <div class="status-message warning">
-                        <h4>Moderation Rejected</h4>
-                        <p>All changes rejected at: ${new Date().toLocaleString()}</p>
-                    </div>
-                `;
-                
-                // Hide all moderation controls
-                document.getElementById('completeModeration').style.display = 'none';
-                document.getElementById('rejectModeration').style.display = 'none';
-                document.querySelectorAll('.moderation-actions').forEach(div => {
-                    div.style.display = 'none';
-                });
-                
-                // Update all result boxes
-                document.querySelectorAll('.moderation-result-box').forEach(box => {
-                    box.innerHTML = 'Moderation rejected';
-                    box.className = 'moderation-result-box';
-                });
-            } else {
-                throw new Error(data.error || 'Failed to reject moderation');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('Error rejecting moderation: ' + error.message);
         }
     }
 
@@ -2013,6 +2500,128 @@
             alert(`Error saving mark: ${error.message}`);
         }
     }
+
+    function getCriterionMark(criteriaId) {
+        const markInput = document.querySelector(`.criterion-mark-input[data-criteria-id="${criteriaId}"]`);
+        if (markInput) {
+            const mark = parseFloat(markInput.value);
+            return !isNaN(mark) ? mark.toFixed(1) : null;
+        }
+        return null;
+    }
+
+    // Add AI Assist tab functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        // ... existing initialization code ...
+
+        // Load AI evaluations when AI Assist tab is opened
+        document.querySelector('[data-tab="ai-assist"]').addEventListener('click', function() {
+            loadAIEvaluations();
+        });
+
+        // Function to load AI evaluations
+        function loadAIEvaluations() {
+            fetch(`/get_ai_evaluations/{{ file_hash }}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        Object.entries(data.evaluations).forEach(([criteriaId, evaluation]) => {
+                            const section = document.querySelector(`.ai-evaluation-section[data-criteria-id="${criteriaId}"]`);
+                            if (section) {
+                                const textDiv = section.querySelector('.ai-evaluation-text');
+                                const markDiv = section.querySelector('.ai-evaluation-mark');
+                                const reasoningDiv = section.querySelector('.ai-evaluation-reasoning');
+                                
+                                textDiv.innerHTML = marked.parse(evaluation.evaluation_text);
+                                markDiv.textContent = `Suggested Mark: ${evaluation.mark}%`;
+                                reasoningDiv.textContent = evaluation.reasoning;
+                            }
+                        });
+                    }
+                })
+                .catch(error => console.error('Error loading AI evaluations:', error));
+        }
+
+        // Function to generate AI evaluation
+        function generateAIEvaluation(criteriaId) {
+            const model = document.getElementById('aiModelSelect').value;
+            const section = document.querySelector(`.ai-evaluation-section[data-criteria-id="${criteriaId}"]`);
+            const button = section.querySelector('.generate-ai-evaluation-btn');
+            const content = section.querySelector('.ai-evaluation-content');
+            
+            // Add loading states
+            button.classList.add('loading');
+            content.classList.add('ai-evaluation-loading');
+            button.disabled = true;
+            
+            fetch(`/generate_ai_evaluation/{{ file_hash }}/${criteriaId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ model: model })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const textDiv = section.querySelector('.ai-evaluation-text');
+                    const markDiv = section.querySelector('.ai-evaluation-mark');
+                    const reasoningDiv = section.querySelector('.ai-evaluation-reasoning');
+                    
+                    textDiv.innerHTML = marked.parse(data.evaluation_text);
+                    markDiv.textContent = `Suggested Mark: ${data.mark}%`;
+                    reasoningDiv.textContent = data.reasoning;
+                } else {
+                    alert('Error generating AI evaluation: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error generating AI evaluation:', error);
+                alert('Error generating AI evaluation: ' + error.message);
+            })
+            .finally(() => {
+                // Remove loading states
+                button.classList.remove('loading');
+                content.classList.remove('ai-evaluation-loading');
+                button.disabled = false;
+            });
+        }
+
+        // Add click handlers for generate buttons
+        document.querySelectorAll('.generate-ai-evaluation-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                const criteriaId = this.closest('.ai-evaluation-section').dataset.criteriaId;
+                generateAIEvaluation(criteriaId);
+            });
+        });
+    });
+
+    // Add tab switching functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        // Tab switching
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Remove active class from all buttons and contents
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                tabContents.forEach(content => content.classList.remove('active'));
+
+                // Add active class to clicked button and corresponding content
+                button.classList.add('active');
+                const tabId = button.getAttribute('data-tab');
+                document.getElementById(`${tabId}-content`).classList.add('active');
+
+                // Load AI evaluations if AI Assist tab is opened
+                if (tabId === 'ai-assist') {
+                    loadAIEvaluations();
+                }
+            });
+        });
+
+        // ... rest of existing initialization code ...
+    });
     </script>
 
     <!-- Macro Modal -->
@@ -2042,6 +2651,44 @@
                 </div>
             </div>
         </div>
+    </div>
+    
+    <!-- Edit Macro Modal -->
+    <div id="editMacroModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeEditModal()">&times;</span>
+            <h3>Edit Feedback Macro</h3>
+            <div class="macro-form-fields">
+                <div class="form-row">
+                    <input type="text" id="editMacroName" placeholder="Short name (e.g., 'poor thesis')" required>
+                    <select id="editMacroCategory">
+                        <option value="general">General</option>
+                        <option value="structure">Structure</option>
+                        <option value="content">Content</option>
+                        <option value="language">Language</option>
+                        <option value="critical">Critical Analysis</option>
+                        <option value="sources">Sources/References</option>
+                        <option value="custom">Custom...</option>
+                    </select>
+                </div>
+                <div id="editCustomCategoryContainer" style="display: none;">
+                    <input type="text" id="editCustomCategory" placeholder="Enter custom category name">
+                </div>
+                <textarea id="editMacroText" placeholder="Enter the feedback text that will be inserted when this macro is used..." required rows="3"></textarea>
+                <input type="hidden" id="editMacroId">
+                <div class="button-row">
+                    <button type="button" id="updateMacroBtn" onclick="updateMacro()">Update Macro</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Context Menu for Macros -->
+    <div id="macroContextMenu" class="context-menu">
+        <ul>
+            <li id="editMacroMenuItem">Edit Macro</li>
+            <li id="deleteMacroMenuItem">Delete Macro</li>
+        </ul>
     </div>
 </body>
 </html>

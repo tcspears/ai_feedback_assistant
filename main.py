@@ -37,11 +37,12 @@ import mimetypes  # For detecting file types
 from services.llm_service import LLMService
 from models.database import (
     db, User, Paper, Rubric, RubricCriteria, Evaluation, 
-    Chat, GradeDescriptors, SavedFeedback, FeedbackMacro, AppliedMacro, ModerationSession, CriterionFeedback, ModerationResult
+    Chat, GradeDescriptors, SavedFeedback, FeedbackMacro, AppliedMacro, ModerationSession, CriterionFeedback, ModerationResult, AIEvaluation
 )
 from utils.prompt_builder import StructuredPrompt
 from utils.prompt_loader import PromptLoader
 from sqlalchemy import or_
+import traceback
 
 def adapt_datetime(ts):
     return ts.isoformat()
@@ -113,7 +114,7 @@ def setup_logging():
     
     # Create a logger
     logger = logging.getLogger('api_logger')
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels
     
     # Remove any existing handlers
     logger.handlers = []
@@ -121,14 +122,23 @@ def setup_logging():
     # Create a file handler
     log_filename = f'logs/api_calls_{datetime.now().strftime("%Y%m%d")}.log'
     file_handler = logging.FileHandler(log_filename, encoding='utf-8')
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels
+    
+    # Create a console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels
     
     # Create a formatter
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
     
-    # Add the handler to the logger
+    # Add the handlers to the logger
     logger.addHandler(file_handler)
+    logger.addHandler(console_handler)  # Add console handler to see logs in terminal
+    
+    # Prevent logs from being propagated to the root logger
+    logger.propagate = False
     
     return logger
 
@@ -231,6 +241,7 @@ def paper(file_hash):
                     'id': eval.id,
                     'criteria_id': eval.criteria_id,
                     'section_name': criteria.section_name,
+                    'criteria_text': criteria.criteria_text,
                     'evaluation_text': eval.evaluation_text,
                     'weight': criteria.weight,
                     'core_feedback': criterion_feedback.get(eval.criteria_id, '').feedback_text if criterion_feedback.get(eval.criteria_id) else ''
@@ -258,28 +269,6 @@ def paper(file_hash):
     # Get the upload time for this file
     upload_time = paper.created_at
     
-    # Calculate average grading time for this rubric
-    avg_time = (db.session.query(func.avg(
-        func.strftime('%s', SavedFeedback.updated_at) - 
-        func.strftime('%s', Paper.created_at)
-    ))
-    .select_from(Paper)
-    .join(SavedFeedback)
-    .join(Evaluation, Evaluation.paper_id == Paper.id)
-    .join(RubricCriteria, RubricCriteria.id == Evaluation.criteria_id)
-    .filter(
-        RubricCriteria.rubric_id == current_rubric_id[0],
-        SavedFeedback.updated_at.isnot(None)
-    )
-    .scalar())
-    
-    # Format average time as HH:MM:SS
-    if avg_time:
-        avg_seconds = int(avg_time)  # Now avg_time is already in seconds
-        average_time = f"{avg_seconds // 3600:02d}:{(avg_seconds % 3600) // 60:02d}:{avg_seconds % 60:02d}"
-    else:
-        average_time = None
-
     return render_template('paper.html',
                          filename=paper.filename,
                          full_text=paper.full_text,
@@ -292,7 +281,6 @@ def paper(file_hash):
                          saved_consolidated_feedback=saved_feedback.consolidated_feedback if saved_feedback else None,
                          pdf_path=paper.pdf_path.replace('static/', ''),
                          upload_time=upload_time.isoformat(),
-                         average_time=average_time,
                          moderation_session=moderation_session,
                          criterion_feedback=criterion_feedback)
 
@@ -535,73 +523,129 @@ def save_mark(file_hash):
         return jsonify({"success": False, "error": str(e)})
 
 
+def get_grade_descriptor_for_mark(mark):
+    """
+    Get the grade descriptor that corresponds to a specific mark.
+    
+    Args:
+        mark (float): The mark to get the descriptor for (0-100)
+        
+    Returns:
+        str: The grade descriptor text, or None if no matching descriptor is found
+    """
+    if mark is None or not (0 <= mark <= 100):
+        return None
+        
+    # Get all descriptors ordered by range_start descending
+    descriptors = GradeDescriptors.query.order_by(GradeDescriptors.range_start.desc()).all()
+    
+    # Find the first descriptor where the mark falls within its range
+    for descriptor in descriptors:
+        if descriptor.range_start <= mark <= descriptor.range_end:
+            return descriptor.descriptor_text
+            
+    return None
+
 @app.route('/generate_consolidated_feedback', methods=['POST'])
 @login_required
 def generate_consolidated_feedback():
     try:
         data = request.json
-        criterion_feedback = data.get('criterion_feedback', {})
+        api_logger.debug(f"Received data: {data}")
+        
         model = data.get('model', 'gpt-4')
         file_hash = data.get('file_hash')
         align_to_mark = data.get('align_to_mark', False)
-        mark = data.get('mark')
-        applied_macros = data.get('applied_macros', [])
+        
+        api_logger.info(f"Starting consolidated feedback generation for file {file_hash}")
+        api_logger.info(f"Using model: {model}")
+        api_logger.info(f"Align to mark: {align_to_mark}")
         
         if not file_hash:
+            api_logger.error("No file hash provided")
             return jsonify({'error': 'No file hash provided'})
         
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        api_logger.info(f"Found paper: {paper.filename}")
         
-        # Get the rubric and criteria
-        evaluations = (Evaluation.query
-                      .filter_by(paper_id=paper.id)
-                      .order_by(Evaluation.criteria_id.nullsfirst())
-                      .all())
+        # Get saved feedback to access criterion feedback
+        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+        if not saved_feedback:
+            api_logger.error("No saved feedback found for paper")
+            return jsonify({'error': 'No saved feedback found for paper'})
         
-        # Build the prompt for consolidated feedback
-        prompt_parts = []
+        # Get all criterion feedback entries for this paper
+        db_criterion_feedback = CriterionFeedback.query.filter_by(
+            saved_feedback_id=saved_feedback.id
+        ).all()
         
-        # Add criterion-specific feedback
-        for eval in evaluations:
-            if eval.criteria_id and eval.criteria_id in criterion_feedback:
-                criteria = RubricCriteria.query.get(eval.criteria_id)
-                if criteria:
-                    prompt_parts.append(f"Feedback for {criteria.section_name}:\n{criterion_feedback[eval.criteria_id]}\n")
+        # Create a dictionary mapping criteria_id to feedback
+        feedback_dict = {cf.criteria_id: cf for cf in db_criterion_feedback}
         
-        # Add mark if provided
-        if mark is not None:
-            prompt_parts.append(f"Overall mark: {mark}")
+        # Get all criteria that have feedback
+        criteria_ids = list(feedback_dict.keys())
+        criteria = RubricCriteria.query.filter(RubricCriteria.id.in_(criteria_ids)).order_by(RubricCriteria.id).all()
         
-        # Add applied macros if any
-        if applied_macros:
-            macros = FeedbackMacro.query.filter(FeedbackMacro.id.in_(applied_macros)).all()
-            if macros:
-                prompt_parts.append("\nApplied feedback macros:")
-                for macro in macros:
-                    prompt_parts.append(f"- {macro.name}: {macro.text}")
+        # Format feedback sections with specific tags
+        formatted_sections = []
+        for criterion in criteria:
+            api_logger.info(f"\nProcessing criterion: {criterion.section_name}")
+            
+            # Get feedback from database
+            section_feedback = feedback_dict[criterion.id].feedback_text if criterion.id in feedback_dict else ''
+            
+            api_logger.info(f"Feedback for {criterion.section_name}: {section_feedback[:100]}...")
+            
+            # Format section with specific tags
+            section_text = f"<feedback_section_name>{criterion.section_name}</feedback_section_name>\n"
+            section_text += f"<feedback_section_text>{section_feedback}</feedback_section_text>\n"
+            
+            formatted_sections.append(section_text)
+            api_logger.info(f"\nFormatted section for {criterion.section_name}")
         
-        # Build the final prompt
-        feedback_text = "\n".join(prompt_parts)
+        # Join all sections with newlines
+        feedback_text = "\n".join(formatted_sections)
+        api_logger.info("\nFinal formatted feedback text:")
+        api_logger.info(feedback_text)
+        
+        # Get the overall mark and corresponding grade descriptor if we need to align the feedback
+        overall_mark = None
+        grade_descriptor = None
+        if align_to_mark:
+            if saved_feedback and saved_feedback.mark is not None:
+                overall_mark = saved_feedback.mark
+                grade_descriptor = get_grade_descriptor_for_mark(overall_mark)
+                api_logger.info(f"\nAligning feedback to mark: {overall_mark}")
+                api_logger.info(f"Grade descriptor: {grade_descriptor}")
         
         # Use prompt loader to create the prompt and get system message
-        prompt, system_msg = prompt_loader.create_prompt(
-            'polish_feedback_prompt',
-            feedback_to_polish=feedback_text
-        )
+        if align_to_mark and overall_mark is not None:
+            prompt, system_msg = prompt_loader.create_prompt('align_feedback_prompt')
+            prompt.add_section('mark', str(overall_mark))
+            prompt.add_section('feedback', feedback_text)
+            if grade_descriptor:
+                prompt.add_section('grade_descriptor', grade_descriptor)
+        else:
+            prompt, system_msg = prompt_loader.create_prompt('polish_feedback_prompt')
+            prompt.add_section('feedback_sections', feedback_text)
         
+        api_logger.info("\nSending prompt to model...")
         # Generate consolidated feedback using the selected model
         consolidated_feedback = llm_service.generate_response(
             model=model,
             messages=[{"role": "user", "content": prompt.build()}],
             system_msg=system_msg
         )
+        api_logger.info("\nReceived consolidated feedback from model:")
+        api_logger.info(consolidated_feedback)
         
         return jsonify({
             'success': True,
             'consolidated_feedback': consolidated_feedback
         })
     except Exception as e:
-        print(f"Error generating consolidated feedback: {str(e)}")
+        api_logger.error(f"Error in generate_consolidated_feedback: {str(e)}")
+        api_logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/save_additional_feedback/<file_hash>', methods=['POST'])
@@ -1025,6 +1069,7 @@ def get_moderation_feedback(file_hash):
         results = {
             result.criteria_id: {
                 'result': result.result,
+                'reasoning': result.reasoning,
                 'moderated_feedback': result.moderated_feedback
             }
             for result in moderation_session.results
@@ -1120,6 +1165,7 @@ def moderate_criterion(file_hash, criteria_id):
         # Get the model from request
         data = request.get_json()
         model = data.get('model', 'gpt-4o')
+        app.logger.info(f"Starting moderation for criterion {criteria_id} using model {model}")
 
         # Get paper and criterion details
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
@@ -1128,6 +1174,7 @@ def moderate_criterion(file_hash, criteria_id):
         # Get saved feedback
         saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
         if not saved_feedback:
+            app.logger.error("No saved feedback found for paper")
             return jsonify({'success': False, 'error': 'No saved feedback found'})
             
         criterion_feedback = CriterionFeedback.query.filter_by(
@@ -1136,6 +1183,7 @@ def moderate_criterion(file_hash, criteria_id):
         ).first()
         
         if not criterion_feedback:
+            app.logger.error("No criterion feedback found")
             return jsonify({'success': False, 'error': 'No criterion feedback found'})
 
         # Get or create moderation session
@@ -1145,6 +1193,7 @@ def moderate_criterion(file_hash, criteria_id):
                             .first())
                             
         if not moderation_session or moderation_session.status != 'pending':
+            app.logger.info("Creating new moderation session")
             moderation_session = ModerationSession(
                 paper_id=paper.id,
                 original_feedback=saved_feedback.consolidated_feedback,
@@ -1153,26 +1202,107 @@ def moderate_criterion(file_hash, criteria_id):
             db.session.add(moderation_session)
             db.session.flush()  # Get the session ID
 
+        # Get grade descriptors from database
+        grade_descriptors = GradeDescriptors.query.order_by(GradeDescriptors.range_start.desc()).all()
+        
+        # Format grade descriptors as text
+        grade_descriptors_text = ""
+        if grade_descriptors:
+            grade_descriptors_text = "Grade Descriptors:\n"
+            for descriptor in grade_descriptors:
+                grade_descriptors_text += f"{descriptor.range_start}-{descriptor.range_end}%: {descriptor.descriptor_text}\n"
+        else:
+            grade_descriptors_text = "No grade descriptors available."
+        
+        # Get more detailed information about the rubric this criterion belongs to
+        rubric = None
+        if criterion.rubric_id:
+            rubric = Rubric.query.get(criterion.rubric_id)
+
+        # Get all other criteria in the rubric for context
+        related_criteria = []
+        if rubric:
+            related_criteria = RubricCriteria.query.filter_by(rubric_id=rubric.id).all()
+            
+        # Build detailed criterion info
+        criterion_info = f"Criterion: {criterion.section_name}\n\n"
+        criterion_info += f"Description: {criterion.criteria_text}\n\n"
+        
+        # Add rubric context
+        if rubric:
+            criterion_info += f"This criterion is part of the rubric: '{rubric.name}'\n"
+            criterion_info += f"Rubric description: {rubric.description}\n\n"
+            
+        # Add weight information
+        criterion_info += f"This criterion has a weight of {criterion.weight} in the overall assessment.\n"
+            
         # Load the criterion moderation prompt
         prompt_loader = PromptLoader('prompts.yaml')
         prompt, system_msg = prompt_loader.create_prompt('criterion_moderation_prompt')
 
         # Fill in dynamic content
-        prompt.add_section('criterion_info', f"Criterion: {criterion.section_name}\n\nDescription: {criterion.criteria_text}")
+        prompt.add_section('criterion_info', criterion_info)
         prompt.add_section('feedback', criterion_feedback.feedback_text if criterion_feedback else "No feedback provided")
-        prompt.add_section('mark_info', str({'mark': saved_feedback.mark}))
+        prompt.add_section('mark_info', f"The proposed mark for this criterion is: {criterion_feedback.mark if criterion_feedback.mark else saved_feedback.mark}%")
+        prompt.add_section('grade_descriptors', grade_descriptors_text)
 
+        app.logger.info(f"Sending prompt to model {model}")
         # Get moderation result from LLM
         result = llm_service.generate_response(
             model=model,
             messages=[{"role": "user", "content": prompt.build()}],
             system_msg=system_msg
         )
+        app.logger.info(f"Received response from model: {result[:100]}...")
 
-        # Validate result is either PASSES or FAILS
-        result = result.strip().upper()
-        if result not in ['PASSES', 'FAILS']:
-            return jsonify({'success': False, 'error': 'Invalid moderation result'})
+        # Parse the JSON result - first clean up any leading/trailing text that might not be part of the JSON
+        result_text = result.strip()
+        
+        # Try multiple approaches to extract JSON
+        json_extracted = False
+        json_content = None
+        
+        # Approach 1: Find JSON content between ```json and ``` markers
+        json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
+        if json_match:
+            app.logger.info("Found JSON content inside code blocks")
+            json_content = json_match.group(1)
+            json_extracted = True
+        
+        # Approach 2: Find content that looks like a JSON object (between curly braces)
+        if not json_extracted:
+            json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
+            if json_obj_match:
+                app.logger.info("Found JSON-like content between curly braces")
+                json_content = json_obj_match.group(1)
+                json_extracted = True
+        
+        # If we couldn't extract JSON, use the whole response
+        if not json_extracted:
+            app.logger.info("Using entire response as JSON")
+            json_content = result_text
+        
+        app.logger.info(f"Attempting to parse JSON: {json_content}")
+        try:
+            result_json = json.loads(json_content)
+            decision = result_json.get('decision', '').strip().upper()
+            reasoning = result_json.get('reasoning', '').strip()
+            
+            app.logger.info(f"Parsed JSON successfully. Decision: {decision}")
+            
+            # Validate decision is either PASSES or FAILS
+            if decision not in ['PASSES', 'FAILS']:
+                app.logger.error(f"Invalid decision value: {decision}")
+                return jsonify({'success': False, 'error': f'Invalid moderation decision: {decision}'})
+                
+            if not reasoning:
+                app.logger.error("Missing reasoning in result")
+                return jsonify({'success': False, 'error': 'Missing reasoning in moderation result'})
+                
+        except json.JSONDecodeError as e:
+            app.logger.error(f"JSON parse error: {str(e)}")
+            app.logger.error(f"Result text: {result_text}")
+            return jsonify({'success': False, 'error': f'Failed to parse moderation result as JSON: {str(e)}'})
 
         # Store the moderation result
         moderation_result = ModerationResult.query.filter_by(
@@ -1181,27 +1311,34 @@ def moderate_criterion(file_hash, criteria_id):
         ).first()
         
         if not moderation_result:
+            app.logger.info("Creating new moderation result")
             moderation_result = ModerationResult(
                 session_id=moderation_session.id,
                 criteria_id=criteria_id,
-                result=result,
+                result=decision,
+                reasoning=reasoning,
                 moderated_feedback=criterion_feedback.feedback_text
             )
             db.session.add(moderation_result)
         else:
-            moderation_result.result = result
+            app.logger.info("Updating existing moderation result")
+            moderation_result.result = decision
+            moderation_result.reasoning = reasoning
             moderation_result.moderated_feedback = criterion_feedback.feedback_text
         
         db.session.commit()
+        app.logger.info("Moderation completed successfully")
 
         return jsonify({
             'success': True,
-            'result': result
+            'result': decision,
+            'reasoning': reasoning
         })
 
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error in moderate_criterion: {str(e)}")
+        app.logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/accept_criterion_changes/<file_hash>/<criteria_id>', methods=['POST'])
@@ -1279,6 +1416,183 @@ def reject_criterion_changes(file_hash, criteria_id):
         app.logger.error(f"Error in reject_criterion_changes: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/get_ai_evaluations/<file_hash>')
+@login_required
+def get_ai_evaluations(file_hash):
+    try:
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Get all AI evaluations for this paper
+        ai_evaluations = AIEvaluation.query.filter_by(paper_id=paper.id).all()
+        
+        # Format evaluations for response
+        formatted_evaluations = {}
+        for eval in ai_evaluations:
+            formatted_evaluations[eval.criteria_id] = {
+                'evaluation_text': eval.evaluation_text,
+                'mark': eval.mark,
+                'created_at': eval.created_at.isoformat()
+            }
+        
+        return jsonify({
+            'success': True,
+            'evaluations': formatted_evaluations
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error getting AI evaluations: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/generate_ai_evaluation/<file_hash>/<criteria_id>', methods=['POST'])
+@login_required
+def generate_ai_evaluation(file_hash, criteria_id):
+    try:
+        # Get the model from request
+        data = request.get_json()
+        model = data.get('model', 'gpt-4')
+        app.logger.info(f"Starting AI evaluation for criterion {criteria_id} using model {model}")
+
+        # Get paper and criterion details
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        criterion = RubricCriteria.query.get_or_404(criteria_id)
+        
+        # Get grade descriptors
+        grade_descriptors = GradeDescriptors.query.order_by(GradeDescriptors.range_start.desc()).all()
+        
+        # Format grade descriptors as text
+        grade_descriptors_text = ""
+        if grade_descriptors:
+            grade_descriptors_text = "Grade Descriptors:\n"
+            for descriptor in grade_descriptors:
+                grade_descriptors_text += f"{descriptor.range_start}-{descriptor.range_end}%: {descriptor.descriptor_text}\n"
+        else:
+            grade_descriptors_text = "No grade descriptors available."
+        
+        # Get more detailed information about the rubric this criterion belongs to
+        rubric = None
+        if criterion.rubric_id:
+            rubric = Rubric.query.get(criterion.rubric_id)
+
+        # Build detailed criterion info
+        criterion_info = f"Criterion: {criterion.section_name}\n\n"
+        criterion_info += f"Description: {criterion.criteria_text}\n\n"
+        
+        # Add rubric context
+        if rubric:
+            criterion_info += f"This criterion is part of the rubric: '{rubric.name}'\n"
+            criterion_info += f"Rubric description: {rubric.description}\n\n"
+            
+        # Add weight information
+        criterion_info += f"This criterion has a weight of {criterion.weight} in the overall assessment.\n"
+            
+        # Load the AI evaluation prompt
+        prompt, system_msg = prompt_loader.create_prompt('ai_evaluation_prompt')
+
+        # Fill in dynamic content
+        prompt.add_section('essay_text', paper.full_text)
+        prompt.add_section('criterion_info', criterion_info)
+        prompt.add_section('grade_descriptors', grade_descriptors_text)
+
+        app.logger.info(f"Sending prompt to model {model}")
+        # Get evaluation from LLM
+        result = llm_service.generate_response(
+            model=model,
+            messages=[{"role": "user", "content": prompt.build()}],
+            system_msg=system_msg
+        )
+        app.logger.info(f"Received response from model: {result[:100]}...")
+
+        # Try to extract JSON from the response
+        result_text = result.strip()
+        
+        # Try multiple approaches to extract JSON
+        json_extracted = False
+        json_content = None
+        
+        # Approach 1: Find JSON content between ```json and ``` markers
+        json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
+        if json_match:
+            app.logger.info("Found JSON content inside code blocks")
+            json_content = json_match.group(1)
+            json_extracted = True
+        
+        # Approach 2: Find content that looks like a JSON object (between curly braces)
+        if not json_extracted:
+            json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
+            if json_obj_match:
+                app.logger.info("Found JSON-like content between curly braces")
+                json_content = json_obj_match.group(1)
+                json_extracted = True
+        
+        # If we couldn't extract JSON, use the whole response
+        if not json_extracted:
+            app.logger.info("Using entire response as JSON")
+            json_content = result_text
+        
+        app.logger.info(f"Attempting to parse JSON: {json_content}")
+        try:
+            result_json = json.loads(json_content)
+            evaluation_text = result_json.get('evaluation', '').strip()
+            mark = result_json.get('mark')
+            reasoning = result_json.get('reasoning', '').strip()
+            
+            if not evaluation_text or mark is None:
+                app.logger.error("Missing required fields in AI evaluation result")
+                return jsonify({'success': False, 'error': 'Invalid AI evaluation result'})
+                
+            # Validate mark is between 0 and 100
+            try:
+                mark = float(mark)
+                if not (0 <= mark <= 100):
+                    return jsonify({'success': False, 'error': 'Invalid mark value'})
+            except (ValueError, TypeError):
+                return jsonify({'success': False, 'error': 'Invalid mark value'})
+                
+        except json.JSONDecodeError as e:
+            app.logger.error(f"JSON parse error: {str(e)}")
+            app.logger.error(f"Result text: {result_text}")
+            app.logger.error(f"Attempted to parse: {json_content}")
+            return jsonify({'success': False, 'error': f'Failed to parse AI evaluation result as JSON: {str(e)}'})
+
+        # Store the AI evaluation
+        ai_evaluation = AIEvaluation.query.filter_by(
+            paper_id=paper.id,
+            criteria_id=criteria_id
+        ).first()
+        
+        if not ai_evaluation:
+            app.logger.info("Creating new AI evaluation")
+            ai_evaluation = AIEvaluation(
+                paper_id=paper.id,
+                criteria_id=criteria_id,
+                evaluation_text=evaluation_text,
+                mark=mark
+            )
+            db.session.add(ai_evaluation)
+        else:
+            app.logger.info("Updating existing AI evaluation")
+            ai_evaluation.evaluation_text = evaluation_text
+            ai_evaluation.mark = mark
+        
+        db.session.commit()
+        app.logger.info("AI evaluation completed successfully")
+
+        return jsonify({
+            'success': True,
+            'evaluation_text': evaluation_text,
+            'mark': mark,
+            'reasoning': reasoning
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error in generate_ai_evaluation: {str(e)}")
+        app.logger.error(f"Error traceback: {traceback.format_exc()}")
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/list_papers')
 @login_required
 def list_papers():
@@ -1323,30 +1637,71 @@ def export_feedback(file_hash):
                       .order_by(Evaluation.criteria_id.nullsfirst())
                       .all())
         
-        # Create CSV data
-        output = StringIO()
-        writer = csv.writer(output)
-        
-        # Write header
-        writer.writerow(['Paper Information'])
-        writer.writerow(['Filename', paper.filename])
-        writer.writerow(['Mark', saved_feedback.mark if saved_feedback.mark else 'Not assigned'])
-        writer.writerow([])  # Empty row for spacing
-        
-        # Write consolidated feedback
-        writer.writerow(['Consolidated Feedback'])
-        writer.writerow([saved_feedback.consolidated_feedback if saved_feedback.consolidated_feedback else 'No consolidated feedback'])
-        writer.writerow([])  # Empty row for spacing
-        
-        # Write criterion-specific feedback
-        writer.writerow(['Criterion-specific Feedback'])
+        # Get all criteria and their feedback
+        criteria_data = []
         for eval in evaluations:
             if eval.criteria_id:
                 criteria = RubricCriteria.query.get(eval.criteria_id)
                 if criteria:
-                    writer.writerow([f'Criterion: {criteria.section_name}'])
-                    writer.writerow([eval.evaluation_text if eval.evaluation_text else 'No feedback'])
-                    writer.writerow([])  # Empty row for spacing
+                    # Get criterion-specific mark and feedback
+                    criterion_feedback = CriterionFeedback.query.filter_by(
+                        saved_feedback_id=saved_feedback.id,
+                        criteria_id=eval.criteria_id
+                    ).first()
+                    
+                    criterion_mark = criterion_feedback.mark if criterion_feedback and criterion_feedback.mark else 0
+                    criterion_feedback_text = criterion_feedback.feedback_text if criterion_feedback else eval.evaluation_text
+                    
+                    criteria_data.append({
+                        'name': criteria.section_name,
+                        'mark': criterion_mark,
+                        'weight': criteria.weight,
+                        'feedback': criterion_feedback_text or 'No feedback'
+                    })
+        
+        # Create CSV data with a single row per essay
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Create headers
+        headers = ['Paper Name', 'Total Mark']
+        
+        # Add column headers for each criterion
+        for i, criterion in enumerate(criteria_data):
+            criterion_num = i + 1
+            headers.extend([
+                f'Criterion {criterion_num} Name',
+                f'Criterion {criterion_num} Mark',
+                f'Criterion {criterion_num} Weight',
+                f'Criterion {criterion_num} Feedback'
+            ])
+        
+        # Add consolidated feedback header
+        headers.append('Consolidated Feedback')
+        
+        # Write headers
+        writer.writerow(headers)
+        
+        # Create a single row with all data
+        row_data = [paper.filename]
+        
+        # Add total mark
+        row_data.append(f"{saved_feedback.mark:.1f}%" if saved_feedback.mark else 'Not assigned')
+        
+        # Add data for each criterion
+        for criterion in criteria_data:
+            row_data.extend([
+                criterion['name'],
+                f"{criterion['mark']:.1f}%" if criterion['mark'] else 'Not assigned',
+                f"{criterion['weight']:.2f}",
+                criterion['feedback']
+            ])
+        
+        # Add consolidated feedback
+        row_data.append(saved_feedback.consolidated_feedback if saved_feedback.consolidated_feedback else 'No consolidated feedback')
+        
+        # Write the row
+        writer.writerow(row_data)
         
         # Create the response
         output.seek(0)
@@ -1451,19 +1806,37 @@ def export_rubric(rubric_id):
         rubric = Rubric.query.get_or_404(rubric_id)
         criteria = RubricCriteria.query.filter_by(rubric_id=rubric_id).order_by(RubricCriteria.id).all()
         
-        # Create a dictionary with all rubric data including weights
+        # Create a dictionary with all rubric data including weights and macros
         rubric_data = {
             "name": rubric.name,
             "description": rubric.description,
-            "criteria": [
-                {
-                    "section_name": c.section_name,
-                    "criteria_text": c.criteria_text,
-                    "weight": c.weight
-                }
-                for c in criteria
-            ]
+            "criteria": []
         }
+        
+        # Add criteria with their associated macros
+        for criterion in criteria:
+            criterion_data = {
+                "section_name": criterion.section_name,
+                "criteria_text": criterion.criteria_text,
+                "weight": criterion.weight,
+                "macros": []
+            }
+            
+            # Get macros for this criterion
+            macros = FeedbackMacro.query.filter_by(
+                rubric_id=rubric_id,
+                criteria_id=criterion.id
+            ).all()
+            
+            # Add macros to criterion data
+            for macro in macros:
+                criterion_data["macros"].append({
+                    "name": macro.name,
+                    "category": macro.category,
+                    "text": macro.text
+                })
+            
+            rubric_data["criteria"].append(criterion_data)
         
         return jsonify({
             "success": True,
@@ -1491,7 +1864,7 @@ def import_rubric():
         db.session.add(rubric)
         db.session.flush()  # Get the rubric_id
         
-        # Add criteria with weights
+        # Add criteria with weights and macros
         total_weight = 0
         criteria_list = []
         
@@ -1511,6 +1884,22 @@ def import_rubric():
             )
             criteria_list.append(criterion)
             db.session.add(criterion)
+            db.session.flush()  # Get the criterion ID
+            
+            # Add macros for this criterion if any exist
+            macros = criterion_data.get('macros', [])
+            for macro_data in macros:
+                if not macro_data.get('name') or not macro_data.get('text'):
+                    continue
+                    
+                macro = FeedbackMacro(
+                    rubric_id=rubric.id,
+                    criteria_id=criterion.id,
+                    name=macro_data['name'],
+                    category=macro_data.get('category', 'general'),
+                    text=macro_data['text']
+                )
+                db.session.add(macro)
         
         # Validate total weight is close to 1
         if abs(total_weight - 1) > 0.0001:
@@ -1556,6 +1945,93 @@ def save_macro_from_paper(file_hash):
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error saving macro: {str(e)}")
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/update_macro/<int:macro_id>', methods=['POST'])
+@login_required
+def update_macro(macro_id):
+    try:
+        data = request.json
+        name = data['name']
+        category = data['category']
+        text = data['text']
+        
+        # Find and update the macro
+        macro = FeedbackMacro.query.get_or_404(macro_id)
+        
+        # Only allow editing if current user is admin or if it's their macro
+        # This check could be modified based on your application's needs
+        
+        # Update the macro
+        macro.name = name
+        macro.category = category
+        macro.text = text
+        
+        db.session.commit()
+        
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating macro: {str(e)}")
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/delete_macro/<int:macro_id>', methods=['POST'])
+@login_required
+def delete_macro(macro_id):
+    try:
+        # Find the macro
+        macro = FeedbackMacro.query.get_or_404(macro_id)
+        
+        # Only allow deletion if current user is admin or if it's their macro
+        # This check could be modified based on your application's needs
+        
+        # Delete any applied instances of this macro
+        AppliedMacro.query.filter_by(macro_id=macro_id).delete()
+        
+        # Delete the macro itself
+        db.session.delete(macro)
+        db.session.commit()
+        
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting macro: {str(e)}")
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route('/delete_paper/<file_hash>', methods=['POST'])
+@login_required
+def delete_paper(file_hash):
+    try:
+        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        
+        # Delete PDF file if it exists
+        if os.path.exists(paper.pdf_path):
+            os.remove(paper.pdf_path)
+        
+        # Delete related records first
+        Chat.query.filter_by(paper_id=paper.id).delete()
+        Evaluation.query.filter_by(paper_id=paper.id).delete()
+        SavedFeedback.query.filter_by(paper_id=paper.id).delete()
+        AppliedMacro.query.filter_by(paper_id=paper.id).delete()
+        AIEvaluation.query.filter_by(paper_id=paper.id).delete()
+        
+        # Delete any moderation sessions and results
+        moderation_sessions = ModerationSession.query.filter_by(paper_id=paper.id).all()
+        for session in moderation_sessions:
+            ModerationResult.query.filter_by(session_id=session.id).delete()
+            db.session.delete(session)
+        
+        # Finally delete the paper
+        db.session.delete(paper)
+        db.session.commit()
+        
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting paper: {str(e)}")
         return jsonify({"success": False, "error": str(e)})
 
 if __name__ == '__main__':

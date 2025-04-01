@@ -14,18 +14,34 @@ polish_feedback_prompt:
   system_msg: "You are an experienced academic writing specialist who excels at polishing feedback while maintaining its substance. Format all responses in Markdown."
   sections:
     task_description:
-      content: "Polish and enhance the following feedback statement by converting it from bullet points into prose."
-    feedback_to_polish:
-      content: null  # Will be filled dynamically
+      content: "Polish and enhance the following feedback by organizing it into clear sections for each marking criterion, followed by overall comments. Each section should consolidate the core feedback and any additional feedback macros for that criterion."
+    feedback_sections:
+      content: null  # Will be filled dynamically with criterion-specific feedback and macros
     detailed_instructions:
       subsections:
-        goal: "Make the feedback more cohesive, professional, and well-structured while preserving the language and tone of the core feedback."
+        goal: "Create a well-structured feedback document with clear sections for each criterion and an overall summary."
         requirements: |
-          1. Do not hallucinate.
-          2. Maintain, word-for-word, the core feedback and the additional feedback provided by the grader. These sections are indicated by the <core_feedback> and </core_feedback> tags and the <additional_feedback> and </additional_feedback> tags respectively. You may re-arrange these parts to improve coherence and flow but do not deviate from the original content.  
-          3. Next, selectively add feedback from the additional feedback section, indicated by the <additional_feedback> and </additional_feedback> tags.
-          4. In consolidating these sections, adjust the additional feedback to match the tone, style, and presentation of the core feedback.
-          5. Do not repeat points already covered in the core feedback.
+          1. Create a separate section for each marking criterion (e.g., "Analysis", "Structure", etc.)
+          2. Within each section:
+             - Combine the core feedback for that criterion
+             - Integrate any relevant feedback macros for that criterion
+             - Present the feedback in clear, professional prose
+          3. End with an "Overall Comments" section that:
+             - Provides a brief summary of the essay's strengths and weaknesses
+             - Suggests key areas for improvement
+          4. Do not mention or discuss any marks or grades in the feedback
+          5. Do not hallucinate or add new content not present in the original feedback
+          6. Maintain consistent tone and style throughout
+          7. Use appropriate Markdown formatting for headers and emphasis
+        format: |
+          # [Criterion Name]
+          [Polished feedback for this criterion]
+
+          # [Next Criterion Name]
+          [Polished feedback for this criterion]
+
+          # Overall Comments
+          [Brief summary of strengths and weaknesses, with key areas for improvement]
 
 moderate_feedback_prompt:
   system_msg: "You are a senior academic with expertise in the subject matter of the essay below. Format all responses in Markdown."
@@ -65,41 +81,83 @@ align_feedback_prompt:
       content: "Review and adjust the following feedback to ensure it aligns with the numerical mark of {mark}%."
     feedback:
       content: null  # Will be filled dynamically
+    grade_descriptor:
+      content: "The grade descriptor for this mark range is:\n{grade_descriptor}"  # Will be filled dynamically
     detailed_instructions:
       subsections:
-        goal: "Ensure the tone, emphasis, and content of the feedback accurately reflect the numerical mark given."
+        goal: "Ensure the tone, emphasis, and content of the feedback accurately reflect the numerical mark given and align with the grade descriptor."
         requirements: |
           1. Do not hallucinate or add new content not present in the original feedback.
           2. Maintain the core feedback provided by the grader, especially any section titled '--- Applied Feedback Macros ---'.
-          3. Adjust the tone to match the mark:
+          3. Adjust the tone to match the mark and grade descriptor:
              - For high marks (70%+): Emphasize strengths, frame weaknesses as minor areas for improvement
              - For mid-range marks (50-69%): Balance strengths and weaknesses equally
              - For low marks (<50%): Acknowledge strengths but clearly explain the significant weaknesses
           4. Do not change the substance of the feedback, only adjust emphasis and tone.
           5. Preserve all specific examples and citations from the original feedback.
-        formatting: "Maintain the original Markdown formatting with appropriate headers and styling." 
+          6. Ensure the feedback aligns with the grade descriptor's expectations for this mark range.
+        formatting: "Maintain the original Markdown formatting with appropriate headers and styling."
 
 criterion_moderation_prompt:
-  system_msg: "You are a senior academic with expertise in evaluating essay feedback against specific grading criteria. You must respond with EXACTLY one word: either 'PASSES' or 'FAILS'."
+  system_msg: "You are a senior academic with expertise in evaluating essay feedback against specific grading criteria. You must respond with a valid JSON object containing your decision and reasoning."
   sections:
     task_description:
-      content: "Your task is to evaluate whether the feedback and mark given for a specific criterion meets academic standards. You will be provided with the criterion description, the feedback given, and the proposed mark."
+      content: "Your task is to evaluate whether the feedback and mark given for a specific criterion meets academic standards. You will be provided with the criterion description, the feedback given, the proposed mark, grade descriptors, and assessment criteria."
     criterion_info:
       content: null  # Will be filled dynamically with criterion name and description
     feedback:
       content: null  # Will be filled dynamically with feedback for this criterion
     mark_info:
       content: "The proposed mark for this criterion is: {mark}%"  # Will be filled dynamically
+    grade_descriptors:
+      content: null  # Will be filled dynamically with grade descriptors
     detailed_instructions:
       subsections:
         requirements: |
           1. Evaluate if the feedback:
              - Accurately reflects the criterion requirements
+             - Aligns with the provided grade descriptors for the given mark
              - Provides specific examples from the essay
              - Justifies the mark given
              - Uses appropriate academic language
-          2. Return EXACTLY one word:
-             - 'PASSES' if the feedback meets academic standards
-             - 'FAILS' if the feedback needs revision
-          3. Do not provide any additional explanation or commentary
-          4. Do not return any other text besides 'PASSES' or 'FAILS' 
+          2. Return your response as a JSON object with exactly this structure:
+             ```json
+             {
+               "decision": "PASSES",  // or "FAILS" - must be one of these two values exactly
+               "reasoning": "Your detailed explanation here..."  // 2-4 sentences explaining your decision
+             }
+             ```
+          3. Your reasoning should be clear, concise, and specific, explaining exactly why the feedback meets standards or needs improvement
+          4. IMPORTANT: Your response must be valid JSON and nothing else - no explanatory text outside the JSON 
+
+ai_evaluation_prompt:
+  system_msg: "You are a senior academic with expertise in evaluating essays according to specific grading criteria. You must respond with a valid JSON object containing your evaluation and mark."
+  sections:
+    task_description:
+      content: "Your task is to evaluate an essay according to specific grading criteria. You will be provided with the essay text, the criterion description, and grade descriptors. Provide a detailed evaluation and suggest an appropriate mark."
+    essay_text:
+      content: null  # Will be filled dynamically with the essay text
+    criterion_info:
+      content: null  # Will be filled dynamically with criterion name and description
+    grade_descriptors:
+      content: null  # Will be filled dynamically with grade descriptors
+    detailed_instructions:
+      subsections:
+        requirements: |
+          1. Evaluate the essay according to the specific criterion:
+             - Consider the criterion requirements carefully
+             - Align your evaluation with the provided grade descriptors
+             - Provide specific examples from the essay
+             - Justify your suggested mark
+             - Use appropriate academic language
+          2. Return your response as a JSON object with exactly this structure:
+             ```json
+             {
+               "evaluation": "Your detailed evaluation here...",  // 3-5 paragraphs of detailed evaluation
+               "mark": 75,  // A number between 0 and 100
+               "reasoning": "Brief explanation of why this mark was chosen..."  // 1-2 sentences
+             }
+             ```
+          3. Your evaluation should be thorough and specific, with clear examples from the text
+          4. The mark should be justified by the evaluation and align with the grade descriptors
+          5. IMPORTANT: Your response must be valid JSON and nothing else - no explanatory text outside the JSON
