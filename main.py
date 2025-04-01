@@ -571,52 +571,60 @@ def generate_consolidated_feedback():
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
         api_logger.info(f"Found paper: {paper.filename}")
         
-        # Get the rubric and criteria
-        evaluations = (Evaluation.query
-                      .filter_by(paper_id=paper.id)
-                      .order_by(Evaluation.criteria_id.nullsfirst())
-                      .all())
-        api_logger.info(f"Found {len(evaluations)} evaluations")
+        # Get saved feedback to access criterion feedback
+        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+        if not saved_feedback:
+            api_logger.error("No saved feedback found for paper")
+            return jsonify({'error': 'No saved feedback found for paper'})
         
-        # Get all criteria and their feedback
+        # Get all criterion feedback entries for this paper
+        db_criterion_feedback = CriterionFeedback.query.filter_by(
+            saved_feedback_id=saved_feedback.id
+        ).all()
+        
+        # Create a dictionary mapping criteria_id to feedback
+        feedback_dict = {cf.criteria_id: cf for cf in db_criterion_feedback}
+        
+        # Get all criteria that have feedback
+        criteria_ids = list(feedback_dict.keys())
+        criteria = RubricCriteria.query.filter(RubricCriteria.id.in_(criteria_ids)).order_by(RubricCriteria.id).all()
+        
         feedback_sections = []
-        for eval in evaluations:
-            if eval.criteria_id:
-                criteria = RubricCriteria.query.get(eval.criteria_id)
-                if criteria:
-                    api_logger.info(f"\nProcessing criterion: {criteria.section_name}")
+        for criterion in criteria:
+            api_logger.info(f"\nProcessing criterion: {criterion.section_name}")
+            
+            # Get feedback from frontend if available, otherwise from database
+            section_feedback = criterion_feedback.get(str(criterion.id), '')
+            if not section_feedback and criterion.id in feedback_dict:
+                section_feedback = feedback_dict[criterion.id].feedback_text
+            
+            api_logger.info(f"Base feedback for {criterion.section_name}: {section_feedback[:100]}...")
+            
+            # Handle applied macros - ensure we're working with the correct data structure
+            section_macros = []
+            if applied_macros:
+                for macro in applied_macros:
+                    # Handle both dictionary and object formats
+                    if isinstance(macro, dict):
+                        macro_criteria_id = macro.get('criteria_id')
+                        macro_text = macro.get('text', '')
+                    else:
+                        macro_criteria_id = getattr(macro, 'criteria_id', None)
+                        macro_text = getattr(macro, 'text', '')
                     
-                    # Get criterion-specific feedback and macros
-                    section_feedback = criterion_feedback.get(str(eval.criteria_id), '')
-                    if not section_feedback:
-                        section_feedback = eval.evaluation_text
-                    api_logger.info(f"Base feedback for {criteria.section_name}: {section_feedback[:100]}...")
-                    
-                    # Handle applied macros - ensure we're working with the correct data structure
-                    section_macros = []
-                    if applied_macros:
-                        for macro in applied_macros:
-                            # Handle both dictionary and object formats
-                            if isinstance(macro, dict):
-                                macro_criteria_id = macro.get('criteria_id')
-                                macro_text = macro.get('text', '')
-                            else:
-                                macro_criteria_id = getattr(macro, 'criteria_id', None)
-                                macro_text = getattr(macro, 'text', '')
-                            
-                            if macro_criteria_id == eval.criteria_id and macro_text:
-                                api_logger.info(f"Found matching macro for {criteria.section_name}: {macro_text[:100]}...")
-                                section_macros.append(macro_text)
-                    
-                    api_logger.info(f"Number of macros for {criteria.section_name}: {len(section_macros)}")
-                    
-                    # Format the section data
-                    section_data = {
-                        'name': criteria.section_name,
-                        'feedback': section_feedback,
-                        'macros': section_macros
-                    }
-                    feedback_sections.append(section_data)
+                    if macro_criteria_id == criterion.id and macro_text:
+                        api_logger.info(f"Found matching macro for {criterion.section_name}: {macro_text[:100]}...")
+                        section_macros.append(macro_text)
+            
+            api_logger.info(f"Number of macros for {criterion.section_name}: {len(section_macros)}")
+            
+            # Format the section data
+            section_data = {
+                'name': criterion.section_name,
+                'feedback': section_feedback,
+                'macros': section_macros
+            }
+            feedback_sections.append(section_data)
         
         api_logger.info(f"\nTotal feedback sections: {len(feedback_sections)}")
         
@@ -643,7 +651,6 @@ def generate_consolidated_feedback():
         overall_mark = None
         grade_descriptor = None
         if align_to_mark:
-            saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
             if saved_feedback and saved_feedback.mark is not None:
                 overall_mark = saved_feedback.mark
                 grade_descriptor = get_grade_descriptor_for_mark(overall_mark)
