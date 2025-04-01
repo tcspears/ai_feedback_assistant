@@ -553,16 +553,13 @@ def generate_consolidated_feedback():
         data = request.json
         api_logger.debug(f"Received data: {data}")
         
-        criterion_feedback = data.get('criterion_feedback', {})
         model = data.get('model', 'gpt-4')
         file_hash = data.get('file_hash')
         align_to_mark = data.get('align_to_mark', False)
-        applied_macros = data.get('applied_macros', [])
         
         api_logger.info(f"Starting consolidated feedback generation for file {file_hash}")
         api_logger.info(f"Using model: {model}")
         api_logger.info(f"Align to mark: {align_to_mark}")
-        api_logger.info(f"Number of applied macros: {len(applied_macros)}")
         
         if not file_hash:
             api_logger.error("No file hash provided")
@@ -589,61 +586,25 @@ def generate_consolidated_feedback():
         criteria_ids = list(feedback_dict.keys())
         criteria = RubricCriteria.query.filter(RubricCriteria.id.in_(criteria_ids)).order_by(RubricCriteria.id).all()
         
-        feedback_sections = []
+        # Format feedback sections with specific tags
+        formatted_sections = []
         for criterion in criteria:
             api_logger.info(f"\nProcessing criterion: {criterion.section_name}")
             
-            # Get feedback from frontend if available, otherwise from database
-            section_feedback = criterion_feedback.get(str(criterion.id), '')
-            if not section_feedback and criterion.id in feedback_dict:
-                section_feedback = feedback_dict[criterion.id].feedback_text
+            # Get feedback from database
+            section_feedback = feedback_dict[criterion.id].feedback_text if criterion.id in feedback_dict else ''
             
-            api_logger.info(f"Base feedback for {criterion.section_name}: {section_feedback[:100]}...")
+            api_logger.info(f"Feedback for {criterion.section_name}: {section_feedback[:100]}...")
             
-            # Handle applied macros - ensure we're working with the correct data structure
-            section_macros = []
-            if applied_macros:
-                for macro in applied_macros:
-                    # Handle both dictionary and object formats
-                    if isinstance(macro, dict):
-                        macro_criteria_id = macro.get('criteria_id')
-                        macro_text = macro.get('text', '')
-                    else:
-                        macro_criteria_id = getattr(macro, 'criteria_id', None)
-                        macro_text = getattr(macro, 'text', '')
-                    
-                    if macro_criteria_id == criterion.id and macro_text:
-                        api_logger.info(f"Found matching macro for {criterion.section_name}: {macro_text[:100]}...")
-                        section_macros.append(macro_text)
+            # Format section with specific tags
+            section_text = f"<feedback_section_name>{criterion.section_name}</feedback_section_name>\n"
+            section_text += f"<feedback_section_text>{section_feedback}</feedback_section_text>\n"
             
-            api_logger.info(f"Number of macros for {criterion.section_name}: {len(section_macros)}")
-            
-            # Format the section data
-            section_data = {
-                'name': criterion.section_name,
-                'feedback': section_feedback,
-                'macros': section_macros
-            }
-            feedback_sections.append(section_data)
-        
-        api_logger.info(f"\nTotal feedback sections: {len(feedback_sections)}")
-        
-        # Format feedback sections for the prompt
-        formatted_sections = []
-        for section in feedback_sections:
-            section_text = f"# {section['name']}\n"
-            if section['feedback']:
-                section_text += f"Core feedback: {section['feedback']}\n"
-            if section['macros']:
-                section_text += "Additional feedback:\n"
-                for macro in section['macros']:
-                    section_text += f"- {macro}\n"
             formatted_sections.append(section_text)
-            api_logger.info(f"\nFormatted section for {section['name']}:")
-            api_logger.info(section_text)
+            api_logger.info(f"\nFormatted section for {criterion.section_name}")
         
         # Join all sections with newlines
-        feedback_text = "\n\n".join(formatted_sections)
+        feedback_text = "\n".join(formatted_sections)
         api_logger.info("\nFinal formatted feedback text:")
         api_logger.info(feedback_text)
         

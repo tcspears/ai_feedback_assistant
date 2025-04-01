@@ -1164,7 +1164,7 @@ label[for="is_admin"] {
     margin-bottom: 10px;
 }
 
-.form-row input, .form-row select {
+.form-row input, .form-row select, .form-row textarea {
     padding: 8px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
@@ -1180,12 +1180,11 @@ label[for="is_admin"] {
     flex: 1;
 }
 
-#customCategoryContainer {
+#customCategoryContainer, #editCustomCategoryContainer {
     margin-bottom: 10px;
 }
 
-#customCategory {
-    width: 100%;
+.form-row input, .form-row select, #customCategory, #editCustomCategory {
     padding: 8px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
@@ -1193,7 +1192,10 @@ label[for="is_admin"] {
     color: var(--text-color);
 }
 
-#macroText {
+.modal-content #macroText,
+.modal-content #editMacroText,
+.modal-content #customCategory,
+.modal-content #editCustomCategory {
     width: 100%;
     padding: 8px;
     border: 1px solid var(--border-color);
@@ -1201,9 +1203,13 @@ label[for="is_admin"] {
     background-color: var(--summary-bg);
     color: var(--text-color);
     font-family: inherit;
+    margin-bottom: 10px;
+}
+
+.modal-content #macroText,
+.modal-content #editMacroText {
     resize: vertical;
     min-height: 80px;
-    margin-bottom: 10px;
 }
 
 .button-row {
