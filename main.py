@@ -114,7 +114,7 @@ def setup_logging():
     
     # Create a logger
     logger = logging.getLogger('api_logger')
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels
     
     # Remove any existing handlers
     logger.handlers = []
@@ -122,14 +122,23 @@ def setup_logging():
     # Create a file handler
     log_filename = f'logs/api_calls_{datetime.now().strftime("%Y%m%d")}.log'
     file_handler = logging.FileHandler(log_filename, encoding='utf-8')
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels
+    
+    # Create a console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG)  # Set to DEBUG to capture all levels
     
     # Create a formatter
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
     
-    # Add the handler to the logger
+    # Add the handlers to the logger
     logger.addHandler(file_handler)
+    logger.addHandler(console_handler)  # Add console handler to see logs in terminal
+    
+    # Prevent logs from being propagated to the root logger
+    logger.propagate = False
     
     return logger
 
@@ -542,7 +551,7 @@ def get_grade_descriptor_for_mark(mark):
 def generate_consolidated_feedback():
     try:
         data = request.json
-        app.logger.debug(f"Received data: {data}")
+        api_logger.debug(f"Received data: {data}")
         
         criterion_feedback = data.get('criterion_feedback', {})
         model = data.get('model', 'gpt-4')
@@ -550,16 +559,24 @@ def generate_consolidated_feedback():
         align_to_mark = data.get('align_to_mark', False)
         applied_macros = data.get('applied_macros', [])
         
+        api_logger.info(f"Starting consolidated feedback generation for file {file_hash}")
+        api_logger.info(f"Using model: {model}")
+        api_logger.info(f"Align to mark: {align_to_mark}")
+        api_logger.info(f"Number of applied macros: {len(applied_macros)}")
+        
         if not file_hash:
+            api_logger.error("No file hash provided")
             return jsonify({'error': 'No file hash provided'})
         
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        api_logger.info(f"Found paper: {paper.filename}")
         
         # Get the rubric and criteria
         evaluations = (Evaluation.query
                       .filter_by(paper_id=paper.id)
                       .order_by(Evaluation.criteria_id.nullsfirst())
                       .all())
+        api_logger.info(f"Found {len(evaluations)} evaluations")
         
         # Get all criteria and their feedback
         feedback_sections = []
@@ -567,8 +584,13 @@ def generate_consolidated_feedback():
             if eval.criteria_id:
                 criteria = RubricCriteria.query.get(eval.criteria_id)
                 if criteria:
+                    api_logger.info(f"\nProcessing criterion: {criteria.section_name}")
+                    
                     # Get criterion-specific feedback and macros
                     section_feedback = criterion_feedback.get(str(eval.criteria_id), '')
+                    if not section_feedback:
+                        section_feedback = eval.evaluation_text
+                    api_logger.info(f"Base feedback for {criteria.section_name}: {section_feedback[:100]}...")
                     
                     # Handle applied macros - ensure we're working with the correct data structure
                     section_macros = []
@@ -583,7 +605,10 @@ def generate_consolidated_feedback():
                                 macro_text = getattr(macro, 'text', '')
                             
                             if macro_criteria_id == eval.criteria_id and macro_text:
+                                api_logger.info(f"Found matching macro for {criteria.section_name}: {macro_text[:100]}...")
                                 section_macros.append(macro_text)
+                    
+                    api_logger.info(f"Number of macros for {criteria.section_name}: {len(section_macros)}")
                     
                     # Format the section data
                     section_data = {
@@ -592,6 +617,8 @@ def generate_consolidated_feedback():
                         'macros': section_macros
                     }
                     feedback_sections.append(section_data)
+        
+        api_logger.info(f"\nTotal feedback sections: {len(feedback_sections)}")
         
         # Format feedback sections for the prompt
         formatted_sections = []
@@ -604,9 +631,13 @@ def generate_consolidated_feedback():
                 for macro in section['macros']:
                     section_text += f"- {macro}\n"
             formatted_sections.append(section_text)
+            api_logger.info(f"\nFormatted section for {section['name']}:")
+            api_logger.info(section_text)
         
         # Join all sections with newlines
         feedback_text = "\n\n".join(formatted_sections)
+        api_logger.info("\nFinal formatted feedback text:")
+        api_logger.info(feedback_text)
         
         # Get the overall mark and corresponding grade descriptor if we need to align the feedback
         overall_mark = None
@@ -616,6 +647,8 @@ def generate_consolidated_feedback():
             if saved_feedback and saved_feedback.mark is not None:
                 overall_mark = saved_feedback.mark
                 grade_descriptor = get_grade_descriptor_for_mark(overall_mark)
+                api_logger.info(f"\nAligning feedback to mark: {overall_mark}")
+                api_logger.info(f"Grade descriptor: {grade_descriptor}")
         
         # Use prompt loader to create the prompt and get system message
         if align_to_mark and overall_mark is not None:
@@ -628,20 +661,23 @@ def generate_consolidated_feedback():
             prompt, system_msg = prompt_loader.create_prompt('polish_feedback_prompt')
             prompt.add_section('feedback_sections', feedback_text)
         
+        api_logger.info("\nSending prompt to model...")
         # Generate consolidated feedback using the selected model
         consolidated_feedback = llm_service.generate_response(
             model=model,
             messages=[{"role": "user", "content": prompt.build()}],
             system_msg=system_msg
         )
+        api_logger.info("\nReceived consolidated feedback from model:")
+        api_logger.info(consolidated_feedback)
         
         return jsonify({
             'success': True,
             'consolidated_feedback': consolidated_feedback
         })
     except Exception as e:
-        app.logger.error(f"Error in generate_consolidated_feedback: {str(e)}")
-        app.logger.error(f"Error traceback: {traceback.format_exc()}")
+        api_logger.error(f"Error in generate_consolidated_feedback: {str(e)}")
+        api_logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/save_additional_feedback/<file_hash>', methods=['POST'])
