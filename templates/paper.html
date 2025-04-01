@@ -1213,12 +1213,16 @@
         setTimeout(calculateAndShowWeightedMark, 500);
         
         // Check if we're on the moderation tab and load results if so
-        if (document.getElementById('moderation-tab').classList.contains('active')) {
+        const moderationTab = document.getElementById('moderation-tab');
+        if (moderationTab && moderationTab.classList.contains('active')) {
             loadModerationResults();
         }
         
         // Setup context menu for macros
-        setupMacroContextMenu();
+        const contextMenu = document.getElementById('macroContextMenu');
+        if (contextMenu) {
+            setupMacroContextMenu();
+        }
     });
 
     function sendMessage() {
@@ -1814,15 +1818,24 @@
         const editMenuItem = document.getElementById('editMacroMenuItem');
         const deleteMenuItem = document.getElementById('deleteMacroMenuItem');
         
+        if (!contextMenu || !editMenuItem || !deleteMenuItem) {
+            console.error('Context menu elements not found');
+            return;
+        }
+        
         // Add click handlers for menu items
-        editMenuItem.addEventListener('click', () => {
+        editMenuItem.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             if (currentContextMenuButton) {
                 editMacro(currentContextMenuButton);
             }
             hideContextMenu();
         });
         
-        deleteMenuItem.addEventListener('click', () => {
+        deleteMenuItem.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             if (currentContextMenuButton) {
                 deleteMacro(currentContextMenuButton);
             }
@@ -1840,10 +1853,17 @@
         document.addEventListener('contextmenu', (e) => {
             if (e.target.classList.contains('macro-button')) {
                 e.preventDefault();
-                showContextMenu(e.target, e.pageX, e.pageY);
+                e.stopPropagation();
+                showContextMenu(e.target, e.clientX, e.clientY);
             } else {
                 hideContextMenu();
             }
+        });
+
+        // Prevent context menu from showing when clicking inside it
+        contextMenu.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
         });
     }
     
