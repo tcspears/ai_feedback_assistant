@@ -2622,6 +2622,152 @@
 
         // ... rest of existing initialization code ...
     });
+
+    async function loadCategories(rubricId) {
+        try {
+            const response = await fetch(`/get_macro_categories/${rubricId}`);
+            const data = await response.json();
+            
+            if (data.success) {
+                const categorySelect = document.getElementById('macroCategory');
+                categorySelect.innerHTML = ''; // Clear existing options
+                
+                // Add categories from database
+                data.categories.forEach(category => {
+                    const option = document.createElement('option');
+                    option.value = category.id;
+                    option.textContent = category.name;
+                    categorySelect.appendChild(option);
+                });
+            } else {
+                throw new Error(data.error || 'Failed to load categories');
+            }
+        } catch (error) {
+            console.error('Error loading categories:', error);
+            alert('Error loading categories: ' + error.message);
+        }
+    }
+
+    function showAddCategoryModal() {
+        document.getElementById('categoryModal').style.display = 'block';
+        document.getElementById('newCategoryName').value = '';
+        document.getElementById('newCategoryName').focus();
+    }
+
+    function closeCategoryModal() {
+        document.getElementById('categoryModal').style.display = 'none';
+    }
+
+    async function saveNewCategory() {
+        const categoryName = document.getElementById('newCategoryName').value.trim();
+        if (!categoryName) {
+            alert('Please enter a category name');
+            return;
+        }
+        
+        try {
+            // Get the rubric ID from the first criterion's data
+            const firstCriterion = document.querySelector('[data-criteria-id]');
+            if (!firstCriterion) {
+                throw new Error('Could not determine rubric ID');
+            }
+            const criteriaId = firstCriterion.dataset.criteriaId;
+            const criteria = await fetch(`/get_criteria/${criteriaId}`).then(r => r.json());
+            const rubricId = criteria.rubric_id;
+            
+            const response = await fetch(`/add_macro_category/${rubricId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: categoryName
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                // Reload categories
+                await loadCategories(rubricId);
+                
+                // Select the new category
+                const categorySelect = document.getElementById('macroCategory');
+                categorySelect.value = data.category.id;
+                
+                // Close the modal
+                closeCategoryModal();
+            } else {
+                throw new Error(data.error || 'Failed to save category');
+            }
+        } catch (error) {
+            console.error('Error saving category:', error);
+            alert('Error saving category: ' + error.message);
+        }
+    }
+
+    // Modify the showAddMacroModal function to load categories
+    async function showAddMacroModal(criteriaId) {
+        const modal = document.getElementById('macroModal');
+        modal.dataset.criteriaId = criteriaId;
+        
+        // Get the rubric ID from the criteria
+        try {
+            const response = await fetch(`/get_criteria/${criteriaId}`);
+            const data = await response.json();
+            if (data.success) {
+                await loadCategories(data.rubric_id);
+            }
+        } catch (error) {
+            console.error('Error loading rubric info:', error);
+        }
+        
+        modal.style.display = 'block';
+        resetMacroForm();
+    }
+
+    // Modify the saveMacro function to use category ID
+    async function saveMacro() {
+        const name = document.getElementById('macroName').value.trim();
+        const categoryId = document.getElementById('macroCategory').value;
+        const text = document.getElementById('macroText').value.trim();
+        const criteriaId = document.getElementById('macroModal').dataset.criteriaId;
+        
+        if (!name || !text || !categoryId) {
+            alert('Please fill in all required fields');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/save_macro_from_paper/{{ file_hash }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: name,
+                    category_id: categoryId,
+                    text: text,
+                    criteria_id: criteriaId
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            if (data.success) {
+                closeModal();
+                loadMacros(); // Reload the macros to show the new one
+                alert('Macro saved successfully!');
+            } else {
+                throw new Error(data.error || 'Failed to save macro');
+            }
+        } catch (error) {
+            console.error('Error saving macro:', error);
+            alert('Error saving macro: ' + error.message);
+        }
+    }
     </script>
 
     <!-- Macro Modal -->
@@ -2633,21 +2779,30 @@
                 <div class="form-row">
                     <input type="text" id="macroName" placeholder="Short name (e.g., 'poor thesis')" required>
                     <select id="macroCategory">
-                        <option value="general">General</option>
-                        <option value="structure">Structure</option>
-                        <option value="content">Content</option>
-                        <option value="language">Language</option>
-                        <option value="critical">Critical Analysis</option>
-                        <option value="sources">Sources/References</option>
-                        <option value="custom">Custom...</option>
+                        <option value="">Loading categories...</option>
                     </select>
-                </div>
-                <div id="customCategoryContainer" style="display: none;">
-                    <input type="text" id="customCategory" placeholder="Enter custom category name">
+                    <button type="button" id="addCategoryBtn" onclick="showAddCategoryModal()" class="secondary-button">+</button>
                 </div>
                 <textarea id="macroText" placeholder="Enter the feedback text that will be inserted when this macro is used..." required rows="3"></textarea>
                 <div class="button-row">
                     <button type="button" id="saveMacroBtn" onclick="saveMacro()">Save Macro</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Add Category Modal -->
+    <div id="categoryModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeCategoryModal()">&times;</span>
+            <h3>Add New Category</h3>
+            <div class="macro-form-fields">
+                <div class="form-row">
+                    <input type="text" id="newCategoryName" placeholder="Category name" required>
+                </div>
+                <div class="button-row">
+                    <button type="button" onclick="closeCategoryModal()" class="secondary-button">Cancel</button>
+                    <button type="button" onclick="saveNewCategory()" class="primary-button">Save Category</button>
                 </div>
             </div>
         </div>

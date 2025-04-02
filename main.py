@@ -1740,10 +1740,17 @@ def get_paper_macros(file_hash):
         # Format macros for response
         formatted_macros = []
         for macro in macros:
+            # Get category name from the MacroCategory model
+            category_name = "General"  # Default category
+            if macro.category_id:
+                category = MacroCategory.query.get(macro.category_id)
+                if category:
+                    category_name = category.name
+            
             formatted_macros.append({
                 'id': macro.id,
                 'name': macro.name,
-                'category': macro.category,
+                'category': category_name,  # Use the category name
                 'text': macro.text,
                 'criteria_id': macro.criteria_id,
                 'applied': macro.id in applied_macro_ids
@@ -1921,7 +1928,7 @@ def save_macro_from_paper(file_hash):
     try:
         data = request.json
         name = data['name']
-        category = data['category']
+        category_id = data['category_id']
         text = data['text']
         criteria_id = data['criteria_id']
         
@@ -1929,13 +1936,21 @@ def save_macro_from_paper(file_hash):
         criteria = RubricCriteria.query.get_or_404(criteria_id)
         rubric_id = criteria.rubric_id
         
+        # Verify the category belongs to this rubric
+        category = MacroCategory.query.get_or_404(category_id)
+        if category.rubric_id != rubric_id:
+            return jsonify({
+                'success': False,
+                'error': 'Category does not belong to this rubric'
+            })
+        
         # Create new macro
         macro = FeedbackMacro(
             name=name,
-            category=category,
+            category_id=category_id,
             text=text,
             criteria_id=criteria_id,
-            rubric_id=rubric_id  # Add the rubric_id
+            rubric_id=rubric_id
         )
         db.session.add(macro)
         db.session.commit()
@@ -2110,6 +2125,21 @@ def delete_macro_category(category_id):
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error deleting macro category: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/get_criteria/<int:criteria_id>')
+@login_required
+def get_criteria(criteria_id):
+    try:
+        criteria = RubricCriteria.query.get_or_404(criteria_id)
+        return jsonify({
+            'success': True,
+            'rubric_id': criteria.rubric_id,
+            'section_name': criteria.section_name,
+            'criteria_text': criteria.criteria_text
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting criteria info: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
