@@ -2142,6 +2142,74 @@ def get_criteria(criteria_id):
         app.logger.error(f"Error getting criteria info: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/get_rubric_macros/<int:rubric_id>')
+@login_required
+def get_rubric_macros(rubric_id):
+    try:
+        # Get all categories for this rubric
+        categories = MacroCategory.query.filter_by(rubric_id=rubric_id).all()
+        
+        # Create a "General" category if it doesn't exist
+        general_category = next((cat for cat in categories if cat.name == "General"), None)
+        if not general_category:
+            general_category = MacroCategory(
+                rubric_id=rubric_id,
+                name="General"
+            )
+            db.session.add(general_category)
+            db.session.commit()
+            categories.append(general_category)
+        
+        # Get all macros for this rubric
+        macros = FeedbackMacro.query.filter_by(rubric_id=rubric_id).all()
+        
+        # Organize macros by category
+        formatted_categories = []
+        for category in categories:
+            category_macros = [
+                {
+                    'id': macro.id,
+                    'name': macro.name,
+                    'text': macro.text
+                }
+                for macro in macros
+                if macro.category_id == category.id
+            ]
+            
+            formatted_categories.append({
+                'id': category.id,
+                'name': category.name,
+                'macros': category_macros
+            })
+        
+        # Add macros with no category to the General category
+        general_category_dict = next(cat for cat in formatted_categories if cat['name'] == "General")
+        general_category_dict['macros'].extend([
+            {
+                'id': macro.id,
+                'name': macro.name,
+                'text': macro.text
+            }
+            for macro in macros
+            if macro.category_id is None
+        ])
+        
+        return jsonify({
+            'success': True,
+            'categories': formatted_categories
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error getting rubric macros: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/manage_macros')
+@login_required
+def manage_macros():
+    # Get all rubrics
+    rubrics = Rubric.query.order_by(Rubric.name).all()
+    return render_template('macros.html', rubrics=rubrics)
+
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")
     print(f"Database URL: {app.config['SQLALCHEMY_DATABASE_URI']}")

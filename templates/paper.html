@@ -793,6 +793,7 @@
             <div class="navigation-links">
                 <a href="{{ url_for('logout') }}">Logout</a>
                 <a href="{{ url_for('list_papers') }}">All Papers</a>
+                <a href="{{ url_for('manage_macros') }}">Macro Manager</a>
                 {% if current_user.is_admin %}
                     <a href="{{ url_for('admin') }}">Admin Panel</a>
                 {% endif %}
