@@ -37,7 +37,7 @@ import mimetypes  # For detecting file types
 from services.llm_service import LLMService
 from models.database import (
     db, User, Paper, Rubric, RubricCriteria, Evaluation, 
-    Chat, GradeDescriptors, SavedFeedback, FeedbackMacro, AppliedMacro, ModerationSession, CriterionFeedback, ModerationResult, AIEvaluation
+    Chat, GradeDescriptors, SavedFeedback, FeedbackMacro, AppliedMacro, ModerationSession, CriterionFeedback, ModerationResult, AIEvaluation, MacroCategory
 )
 from utils.prompt_builder import StructuredPrompt
 from utils.prompt_loader import PromptLoader
@@ -1740,10 +1740,17 @@ def get_paper_macros(file_hash):
         # Format macros for response
         formatted_macros = []
         for macro in macros:
+            # Get category name from the MacroCategory model
+            category_name = "General"  # Default category
+            if macro.category_id:
+                category = MacroCategory.query.get(macro.category_id)
+                if category:
+                    category_name = category.name
+            
             formatted_macros.append({
                 'id': macro.id,
                 'name': macro.name,
-                'category': macro.category,
+                'category': category_name,  # Use the category name
                 'text': macro.text,
                 'criteria_id': macro.criteria_id,
                 'applied': macro.id in applied_macro_ids
@@ -1921,7 +1928,7 @@ def save_macro_from_paper(file_hash):
     try:
         data = request.json
         name = data['name']
-        category = data['category']
+        category_id = data['category_id']
         text = data['text']
         criteria_id = data['criteria_id']
         
@@ -1929,13 +1936,21 @@ def save_macro_from_paper(file_hash):
         criteria = RubricCriteria.query.get_or_404(criteria_id)
         rubric_id = criteria.rubric_id
         
+        # Verify the category belongs to this rubric
+        category = MacroCategory.query.get_or_404(category_id)
+        if category.rubric_id != rubric_id:
+            return jsonify({
+                'success': False,
+                'error': 'Category does not belong to this rubric'
+            })
+        
         # Create new macro
         macro = FeedbackMacro(
             name=name,
-            category=category,
+            category_id=category_id,
             text=text,
             criteria_id=criteria_id,
-            rubric_id=rubric_id  # Add the rubric_id
+            rubric_id=rubric_id
         )
         db.session.add(macro)
         db.session.commit()
@@ -2033,6 +2048,167 @@ def delete_paper(file_hash):
         db.session.rollback()
         app.logger.error(f"Error deleting paper: {str(e)}")
         return jsonify({"success": False, "error": str(e)})
+
+@app.route('/get_macro_categories/<int:rubric_id>')
+@login_required
+def get_macro_categories(rubric_id):
+    try:
+        categories = MacroCategory.query.filter_by(rubric_id=rubric_id).all()
+        return jsonify({
+            'success': True,
+            'categories': [{'id': cat.id, 'name': cat.name} for cat in categories]
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting macro categories: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/add_macro_category/<int:rubric_id>', methods=['POST'])
+@login_required
+def add_macro_category(rubric_id):
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        if not name:
+            return jsonify({'success': False, 'error': 'Category name is required'})
+
+        category = MacroCategory(
+            rubric_id=rubric_id,
+            name=name
+        )
+        db.session.add(category)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'category': {'id': category.id, 'name': category.name}
+        })
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error adding macro category: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/update_macro_category/<int:category_id>', methods=['POST'])
+@login_required
+def update_macro_category(category_id):
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        if not name:
+            return jsonify({'success': False, 'error': 'Category name is required'})
+
+        category = MacroCategory.query.get_or_404(category_id)
+        category.name = name
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'category': {'id': category.id, 'name': category.name}
+        })
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating macro category: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/delete_macro_category/<int:category_id>', methods=['POST'])
+@login_required
+def delete_macro_category(category_id):
+    try:
+        category = MacroCategory.query.get_or_404(category_id)
+        
+        # Update any macros using this category to use null category_id
+        FeedbackMacro.query.filter_by(category_id=category_id).update({'category_id': None})
+        
+        db.session.delete(category)
+        db.session.commit()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting macro category: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/get_criteria/<int:criteria_id>')
+@login_required
+def get_criteria(criteria_id):
+    try:
+        criteria = RubricCriteria.query.get_or_404(criteria_id)
+        return jsonify({
+            'success': True,
+            'rubric_id': criteria.rubric_id,
+            'section_name': criteria.section_name,
+            'criteria_text': criteria.criteria_text
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting criteria info: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/get_rubric_macros/<int:rubric_id>')
+@login_required
+def get_rubric_macros(rubric_id):
+    try:
+        # Get all categories for this rubric
+        categories = MacroCategory.query.filter_by(rubric_id=rubric_id).all()
+        
+        # Create a "General" category if it doesn't exist
+        general_category = next((cat for cat in categories if cat.name == "General"), None)
+        if not general_category:
+            general_category = MacroCategory(
+                rubric_id=rubric_id,
+                name="General"
+            )
+            db.session.add(general_category)
+            db.session.commit()
+            categories.append(general_category)
+        
+        # Get all macros for this rubric
+        macros = FeedbackMacro.query.filter_by(rubric_id=rubric_id).all()
+        
+        # Organize macros by category
+        formatted_categories = []
+        for category in categories:
+            category_macros = [
+                {
+                    'id': macro.id,
+                    'name': macro.name,
+                    'text': macro.text
+                }
+                for macro in macros
+                if macro.category_id == category.id
+            ]
+            
+            formatted_categories.append({
+                'id': category.id,
+                'name': category.name,
+                'macros': category_macros
+            })
+        
+        # Add macros with no category to the General category
+        general_category_dict = next(cat for cat in formatted_categories if cat['name'] == "General")
+        general_category_dict['macros'].extend([
+            {
+                'id': macro.id,
+                'name': macro.name,
+                'text': macro.text
+            }
+            for macro in macros
+            if macro.category_id is None
+        ])
+        
+        return jsonify({
+            'success': True,
+            'categories': formatted_categories
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error getting rubric macros: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/manage_macros')
+@login_required
+def manage_macros():
+    # Get all rubrics
+    rubrics = Rubric.query.order_by(Rubric.name).all()
+    return render_template('macros.html', rubrics=rubrics)
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")

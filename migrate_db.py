@@ -2,7 +2,7 @@ import sqlite3
 import os
 
 def migrate_database():
-    """Add the reasoning column to the moderation_results table."""
+    """Add macro categories table and update feedback_macros table."""
     
     print("Starting database migration...")
     
@@ -29,19 +29,58 @@ def migrate_database():
     cursor = conn.cursor()
     
     try:
-        # Check if reasoning column already exists
-        cursor.execute("PRAGMA table_info(moderation_results)")
+        # Create macro_categories table
+        print("Creating macro_categories table...")
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS macro_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rubric_id INTEGER NOT NULL,
+            name VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (rubric_id) REFERENCES rubrics (id)
+        )
+        """)
+
+        # Check if category_id column exists in feedback_macros
+        cursor.execute("PRAGMA table_info(feedback_macros)")
         columns = cursor.fetchall()
         column_names = [column[1] for column in columns]
         
-        if 'reasoning' not in column_names:
-            print("Adding 'reasoning' column to moderation_results table...")
-            cursor.execute("ALTER TABLE moderation_results ADD COLUMN reasoning TEXT")
-            conn.commit()
-            print("Column added successfully.")
-        else:
-            print("The 'reasoning' column already exists. No changes needed.")
+        if 'category_id' not in column_names:
+            print("Adding category_id column to feedback_macros table...")
+            # First, rename the existing category column
+            cursor.execute("ALTER TABLE feedback_macros RENAME TO feedback_macros_old")
+            
+            # Create new table with updated schema
+            cursor.execute("""
+            CREATE TABLE feedback_macros (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rubric_id INTEGER NOT NULL,
+                criteria_id INTEGER,
+                name VARCHAR(255) NOT NULL,
+                text TEXT NOT NULL,
+                category_id INTEGER,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (rubric_id) REFERENCES rubrics (id),
+                FOREIGN KEY (criteria_id) REFERENCES rubric_criteria (id),
+                FOREIGN KEY (category_id) REFERENCES macro_categories (id)
+            )
+            """)
+            
+            # Copy data from old table to new table
+            cursor.execute("""
+            INSERT INTO feedback_macros (id, rubric_id, criteria_id, name, text, created_at)
+            SELECT id, rubric_id, criteria_id, name, text, created_at
+            FROM feedback_macros_old
+            """)
+            
+            # Drop old table
+            cursor.execute("DROP TABLE feedback_macros_old")
+            
+            print("Successfully migrated feedback_macros table")
         
+        conn.commit()
+        print("Migration completed successfully")
         return True
     
     except Exception as e:
@@ -51,9 +90,5 @@ def migrate_database():
     finally:
         conn.close()
 
-if __name__ == "__main__":
-    success = migrate_database()
-    if success:
-        print("Migration completed successfully!")
-    else:
-        print("Migration failed or was not needed.") 
+if __name__ == '__main__':
+    migrate_database() 
