@@ -1751,6 +1751,7 @@ def get_paper_macros(file_hash):
                 'id': macro.id,
                 'name': macro.name,
                 'category': category_name,  # Use the category name
+                'category_id': macro.category_id,  # Add the category_id
                 'text': macro.text,
                 'criteria_id': macro.criteria_id,
                 'applied': macro.id in applied_macro_ids
@@ -1968,7 +1969,7 @@ def update_macro(macro_id):
     try:
         data = request.json
         name = data['name']
-        category = data['category']
+        category_id = data['category_id']
         text = data['text']
         
         # Find and update the macro
@@ -1979,7 +1980,7 @@ def update_macro(macro_id):
         
         # Update the macro
         macro.name = name
-        macro.category = category
+        macro.category_id = category_id
         macro.text = text
         
         db.session.commit()
@@ -2209,6 +2210,35 @@ def manage_macros():
     # Get all rubrics
     rubrics = Rubric.query.order_by(Rubric.name).all()
     return render_template('macros.html', rubrics=rubrics)
+
+@app.route('/add_macro', methods=['POST'])
+@login_required
+def add_macro():
+    try:
+        data = request.json
+        name = data['name']
+        category_id = data['category_id']
+        text = data['text']
+        rubric_id = data.get('rubric_id')
+        criteria_id = data.get('criteria_id')
+        
+        # Create new macro
+        macro = FeedbackMacro(
+            name=name,
+            category_id=category_id,
+            text=text,
+            rubric_id=rubric_id,
+            criteria_id=criteria_id
+        )
+        db.session.add(macro)
+        db.session.commit()
+        
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error saving macro: {str(e)}")
+        return jsonify({"success": False, "error": str(e)})
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")
