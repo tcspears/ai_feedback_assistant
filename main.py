@@ -1838,9 +1838,16 @@ def export_rubric(rubric_id):
             
             # Add macros to criterion data
             for macro in macros:
+                # Get category name if category_id exists
+                category_name = "General"  # Default category name
+                if macro.category_id:
+                    category = MacroCategory.query.get(macro.category_id)
+                    if category:
+                        category_name = category.name
+                
                 criterion_data["macros"].append({
                     "name": macro.name,
-                    "category": macro.category,
+                    "category": category_name,
                     "text": macro.text
                 })
             
@@ -1872,6 +1879,14 @@ def import_rubric():
         db.session.add(rubric)
         db.session.flush()  # Get the rubric_id
         
+        # Create a default "General" category if it doesn't exist
+        general_category = MacroCategory(
+            rubric_id=rubric.id,
+            name="General"
+        )
+        db.session.add(general_category)
+        db.session.flush()  # Get the category ID
+        
         # Add criteria with weights and macros
         total_weight = 0
         criteria_list = []
@@ -1899,12 +1914,30 @@ def import_rubric():
             for macro_data in macros:
                 if not macro_data.get('name') or not macro_data.get('text'):
                     continue
-                    
+                
+                # Get category name from macro data or use "General" as default
+                category_name = macro_data.get('category', 'General')
+                
+                # Find or create category with this name
+                category = MacroCategory.query.filter_by(
+                    rubric_id=rubric.id,
+                    name=category_name
+                ).first()
+                
+                if not category:
+                    # Create new category
+                    category = MacroCategory(
+                        rubric_id=rubric.id,
+                        name=category_name
+                    )
+                    db.session.add(category)
+                    db.session.flush()  # Get the category ID
+                
                 macro = FeedbackMacro(
                     rubric_id=rubric.id,
                     criteria_id=criterion.id,
                     name=macro_data['name'],
-                    category=macro_data.get('category', 'general'),
+                    category_id=category.id,
                     text=macro_data['text']
                 )
                 db.session.add(macro)
