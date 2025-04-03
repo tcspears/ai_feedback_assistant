@@ -1022,19 +1022,29 @@ def save_consolidated_feedback(file_hash):
 @login_required
 def start_moderation(file_hash):
     try:
+        api_logger.info(f"Starting moderation session for paper {file_hash}")
+        data = request.get_json()
+        model = data.get('model', 'gpt-4o')
+        api_logger.info(f"Moderation model selected: {model}")
+        
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        api_logger.info(f"Found paper: {paper.filename}")
         
         # Clear any existing moderation results for this paper
         session = ModerationSession.query.filter_by(paper_id=paper.id).first()
         if session:
+            api_logger.info(f"Clearing previous moderation session (ID: {session.id})")
             ModerationResult.query.filter_by(session_id=session.id).delete()
             db.session.delete(session)
         
         # Create a new moderation session
         saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
         if not saved_feedback:
+            api_logger.error("No saved feedback found")
             return jsonify({'success': False, 'error': 'No saved feedback found'})
             
+        api_logger.info(f"Creating new moderation session with consolidated feedback length: {len(saved_feedback.consolidated_feedback) if saved_feedback.consolidated_feedback else 0}")
+        
         new_session = ModerationSession(
             paper_id=paper.id,
             original_feedback=saved_feedback.consolidated_feedback,
@@ -1042,12 +1052,15 @@ def start_moderation(file_hash):
         )
         db.session.add(new_session)
         db.session.commit()
+        
+        api_logger.info(f"New moderation session created (ID: {new_session.id})")
 
         return jsonify({'success': True})
 
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error in start_moderation: {str(e)}")
+        api_logger.error(f"Error in start_moderation: {str(e)}")
+        api_logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/get_moderation_feedback/<file_hash>')
@@ -1090,7 +1103,9 @@ def get_moderation_feedback(file_hash):
 @login_required
 def complete_moderation(file_hash):
     try:
+        api_logger.info(f"Completing moderation session for paper {file_hash}")
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        api_logger.info(f"Found paper: {paper.filename}")
         
         # Get the latest moderation session
         moderation_session = (ModerationSession.query
@@ -1099,7 +1114,10 @@ def complete_moderation(file_hash):
                             .first())
         
         if not moderation_session:
+            api_logger.error("No moderation session found")
             return jsonify({'success': False, 'error': 'No moderation session found'})
+            
+        api_logger.info(f"Found moderation session (ID: {moderation_session.id}, Status: {moderation_session.status})")
         
         # Update all criterion feedback with moderated versions
         moderated_feedback = {}
@@ -1110,14 +1128,21 @@ def complete_moderation(file_hash):
             ).first()
             
             if criterion_feedback:
+                api_logger.info(f"Updating criterion feedback for criteria ID: {result.criteria_id}")
+                api_logger.info(f"Previous feedback length: {len(criterion_feedback.feedback_text)}")
+                api_logger.info(f"New moderated feedback length: {len(result.moderated_feedback)}")
+                
                 criterion_feedback.feedback_text = result.moderated_feedback
                 moderated_feedback[result.criteria_id] = result.moderated_feedback
+            else:
+                api_logger.warning(f"Could not find criterion feedback for criteria ID: {result.criteria_id}")
         
         # Update session status
         moderation_session.status = 'completed'
         moderation_session.completed_at = func.now()
         
         db.session.commit()
+        api_logger.info(f"Moderation session completed successfully. Updated {len(moderated_feedback)} criterion feedbacks.")
 
         return jsonify({
             'success': True,
@@ -1126,14 +1151,17 @@ def complete_moderation(file_hash):
 
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error in complete_moderation: {str(e)}")
+        api_logger.error(f"Error in complete_moderation: {str(e)}")
+        api_logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/reject_moderation/<file_hash>', methods=['POST'])
 @login_required
 def reject_moderation(file_hash):
     try:
+        api_logger.info(f"Rejecting moderation session for paper {file_hash}")
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        api_logger.info(f"Found paper: {paper.filename}")
         
         # Get the latest moderation session
         moderation_session = (ModerationSession.query
@@ -1142,6 +1170,12 @@ def reject_moderation(file_hash):
                             .first())
         
         if moderation_session:
+            api_logger.info(f"Found moderation session (ID: {moderation_session.id}, Status: {moderation_session.status})")
+            
+            # Count moderation results before deletion
+            result_count = ModerationResult.query.filter_by(session_id=moderation_session.id).count()
+            api_logger.info(f"Deleting {result_count} moderation results")
+            
             # Clear all moderation results
             ModerationResult.query.filter_by(session_id=moderation_session.id).delete()
             
@@ -1150,12 +1184,16 @@ def reject_moderation(file_hash):
             moderation_session.completed_at = func.now()
             
             db.session.commit()
+            api_logger.info("Moderation session rejected successfully")
+        else:
+            api_logger.warning("No moderation session found to reject")
 
         return jsonify({'success': True})
 
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error in reject_moderation: {str(e)}")
+        api_logger.error(f"Error in reject_moderation: {str(e)}")
+        api_logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/moderate_criterion/<file_hash>/<criteria_id>', methods=['POST'])
@@ -1165,16 +1203,18 @@ def moderate_criterion(file_hash, criteria_id):
         # Get the model from request
         data = request.get_json()
         model = data.get('model', 'gpt-4o')
-        app.logger.info(f"Starting moderation for criterion {criteria_id} using model {model}")
+        api_logger.info(f"Starting moderation for criterion {criteria_id} using model {model}")
+        api_logger.info(f"Request data: {data}")
 
         # Get paper and criterion details
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
         criterion = RubricCriteria.query.get_or_404(criteria_id)
+        api_logger.info(f"Paper: {paper.filename}, Criterion: {criterion.section_name}")
         
         # Get saved feedback
         saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
         if not saved_feedback:
-            app.logger.error("No saved feedback found for paper")
+            api_logger.error("No saved feedback found for paper")
             return jsonify({'success': False, 'error': 'No saved feedback found'})
             
         criterion_feedback = CriterionFeedback.query.filter_by(
@@ -1183,8 +1223,11 @@ def moderate_criterion(file_hash, criteria_id):
         ).first()
         
         if not criterion_feedback:
-            app.logger.error("No criterion feedback found")
+            api_logger.error("No criterion feedback found")
             return jsonify({'success': False, 'error': 'No criterion feedback found'})
+        
+        api_logger.info(f"Criterion feedback: {criterion_feedback.feedback_text[:100]}...")
+        api_logger.info(f"Criterion mark: {criterion_feedback.mark}")
 
         # Get or create moderation session
         moderation_session = (ModerationSession.query
@@ -1193,7 +1236,7 @@ def moderate_criterion(file_hash, criteria_id):
                             .first())
                             
         if not moderation_session or moderation_session.status != 'pending':
-            app.logger.info("Creating new moderation session")
+            api_logger.info("Creating new moderation session")
             moderation_session = ModerationSession(
                 paper_id=paper.id,
                 original_feedback=saved_feedback.consolidated_feedback,
@@ -1214,15 +1257,19 @@ def moderate_criterion(file_hash, criteria_id):
         else:
             grade_descriptors_text = "No grade descriptors available."
         
+        api_logger.info(f"Grade descriptors: {grade_descriptors_text}")
+        
         # Get more detailed information about the rubric this criterion belongs to
         rubric = None
         if criterion.rubric_id:
             rubric = Rubric.query.get(criterion.rubric_id)
+            api_logger.info(f"Rubric: {rubric.name}" if rubric else "No rubric found")
 
         # Get all other criteria in the rubric for context
         related_criteria = []
         if rubric:
             related_criteria = RubricCriteria.query.filter_by(rubric_id=rubric.id).all()
+            api_logger.info(f"Related criteria count: {len(related_criteria)}")
             
         # Build detailed criterion info
         criterion_info = f"Criterion: {criterion.section_name}\n\n"
@@ -1235,6 +1282,8 @@ def moderate_criterion(file_hash, criteria_id):
             
         # Add weight information
         criterion_info += f"This criterion has a weight of {criterion.weight} in the overall assessment.\n"
+        
+        api_logger.info(f"Criterion info: {criterion_info}")
             
         # Load the criterion moderation prompt
         prompt_loader = PromptLoader('prompts.yaml')
@@ -1246,14 +1295,18 @@ def moderate_criterion(file_hash, criteria_id):
         prompt.add_section('mark_info', f"The proposed mark for this criterion is: {criterion_feedback.mark if criterion_feedback.mark else saved_feedback.mark}%")
         prompt.add_section('grade_descriptors', grade_descriptors_text)
 
-        app.logger.info(f"Sending prompt to model {model}")
+        # Log the complete prompt and system message
+        api_logger.info(f"System message for moderation: {system_msg}")
+        api_logger.info(f"Complete prompt for moderation: {prompt.build()}")
+        api_logger.info(f"Sending prompt to model {model}")
+        
         # Get moderation result from LLM
         result = llm_service.generate_response(
             model=model,
             messages=[{"role": "user", "content": prompt.build()}],
             system_msg=system_msg
         )
-        app.logger.info(f"Received response from model: {result[:100]}...")
+        api_logger.info(f"Received full response from model: {result}")
 
         # Parse the JSON result - first clean up any leading/trailing text that might not be part of the JSON
         result_text = result.strip()
@@ -1265,7 +1318,7 @@ def moderate_criterion(file_hash, criteria_id):
         # Approach 1: Find JSON content between ```json and ``` markers
         json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
         if json_match:
-            app.logger.info("Found JSON content inside code blocks")
+            api_logger.info("Found JSON content inside code blocks")
             json_content = json_match.group(1)
             json_extracted = True
         
@@ -1273,35 +1326,36 @@ def moderate_criterion(file_hash, criteria_id):
         if not json_extracted:
             json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
             if json_obj_match:
-                app.logger.info("Found JSON-like content between curly braces")
+                api_logger.info("Found JSON-like content between curly braces")
                 json_content = json_obj_match.group(1)
                 json_extracted = True
         
         # If we couldn't extract JSON, use the whole response
         if not json_extracted:
-            app.logger.info("Using entire response as JSON")
+            api_logger.info("Using entire response as JSON")
             json_content = result_text
         
-        app.logger.info(f"Attempting to parse JSON: {json_content}")
+        api_logger.info(f"Extracted JSON content: {json_content}")
+        
         try:
             result_json = json.loads(json_content)
             decision = result_json.get('decision', '').strip().upper()
             reasoning = result_json.get('reasoning', '').strip()
             
-            app.logger.info(f"Parsed JSON successfully. Decision: {decision}")
+            api_logger.info(f"Parsed JSON successfully. Decision: {decision}, Reasoning: {reasoning[:100]}...")
             
             # Validate decision is either PASSES or FAILS
             if decision not in ['PASSES', 'FAILS']:
-                app.logger.error(f"Invalid decision value: {decision}")
+                api_logger.error(f"Invalid decision value: {decision}")
                 return jsonify({'success': False, 'error': f'Invalid moderation decision: {decision}'})
                 
             if not reasoning:
-                app.logger.error("Missing reasoning in result")
+                api_logger.error("Missing reasoning in result")
                 return jsonify({'success': False, 'error': 'Missing reasoning in moderation result'})
                 
         except json.JSONDecodeError as e:
-            app.logger.error(f"JSON parse error: {str(e)}")
-            app.logger.error(f"Result text: {result_text}")
+            api_logger.error(f"JSON parse error: {str(e)}")
+            api_logger.error(f"Result text: {result_text}")
             return jsonify({'success': False, 'error': f'Failed to parse moderation result as JSON: {str(e)}'})
 
         # Store the moderation result
@@ -1311,7 +1365,7 @@ def moderate_criterion(file_hash, criteria_id):
         ).first()
         
         if not moderation_result:
-            app.logger.info("Creating new moderation result")
+            api_logger.info("Creating new moderation result")
             moderation_result = ModerationResult(
                 session_id=moderation_session.id,
                 criteria_id=criteria_id,
@@ -1321,13 +1375,13 @@ def moderate_criterion(file_hash, criteria_id):
             )
             db.session.add(moderation_result)
         else:
-            app.logger.info("Updating existing moderation result")
+            api_logger.info("Updating existing moderation result")
             moderation_result.result = decision
             moderation_result.reasoning = reasoning
             moderation_result.moderated_feedback = criterion_feedback.feedback_text
         
         db.session.commit()
-        app.logger.info("Moderation completed successfully")
+        api_logger.info("Moderation completed successfully")
 
         return jsonify({
             'success': True,
@@ -1337,8 +1391,8 @@ def moderate_criterion(file_hash, criteria_id):
 
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error in moderate_criterion: {str(e)}")
-        app.logger.error(f"Error traceback: {traceback.format_exc()}")
+        api_logger.error(f"Error in moderate_criterion: {str(e)}")
+        api_logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/accept_criterion_changes/<file_hash>/<criteria_id>', methods=['POST'])
