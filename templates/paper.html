@@ -780,6 +780,50 @@
         .generate-ai-evaluation-btn:hover {
             background: var(--hover-color);
         }
+
+        .error-notification {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 6px;
+            background-color: rgba(220, 53, 69, 0.1);
+            border: 1px solid #dc3545;
+            display: flex;
+            align-items: flex-start;
+            max-width: 100%;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        
+        .error-icon {
+            font-size: 20px;
+            margin-right: 10px;
+            color: #dc3545;
+        }
+        
+        .error-message {
+            font-weight: bold;
+            color: #dc3545;
+            margin-bottom: 6px;
+        }
+        
+        .error-hint {
+            font-size: 13px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .error {
+            color: #dc3545;
+            background-color: rgba(220, 53, 69, 0.05);
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 3px solid #dc3545;
+            margin: 8px 0;
+        }
     </style>
 </head>
 <body>
@@ -1213,6 +1257,18 @@
         }
     });
 
+    // Add error handling function for Anthropic overloaded errors
+    function handleApiResponse(response) {
+        if (!response.ok) {
+            // If it's a 503 Service Unavailable (likely Anthropic overloaded)
+            if (response.status === 503) {
+                throw new Error("The AI service is currently experiencing high demand. Please try again in a few moments or select a different model.");
+            }
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    }
+
     function sendMessage() {
         const messageInput = document.getElementById('userMessage');
         const message = messageInput.value.trim();
@@ -1239,12 +1295,7 @@
                 model: document.getElementById('modelSelect').value
             })
         })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
+        .then(handleApiResponse)
         .then(data => {
             // Remove loading indicator
             const loadingElement = document.getElementById(loadingId);
@@ -1269,7 +1320,15 @@
             }
 
             console.error('Error:', error);
-            chatMessages.innerHTML += `<p class="error"><strong>Error:</strong> ${error.message || 'Failed to get a response. The model may not be supported.'}</p>`;
+            const errorMsg = error.message || 'Failed to get a response';
+            
+            // Format the error message - specially handle overloaded errors
+            let formattedErrorMsg = errorMsg;
+            if (errorMsg.includes('high demand')) {
+                formattedErrorMsg = `${errorMsg}<br><span style="font-size: 0.9em; color: #888;">Try using a different model like GPT-4o or try again in a few minutes.</span>`;
+            }
+            
+            chatMessages.innerHTML += `<p class="error"><strong>Error:</strong> ${formattedErrorMsg}</p>`;
             chatMessages.scrollTop = chatMessages.scrollHeight;
         });
     }
@@ -1389,11 +1448,7 @@
                 })
             });
             
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (data.error) {
                 throw new Error(data.error);
             }
@@ -1413,7 +1468,7 @@
                 })
             });
             
-            const saveData = await saveResponse.json();
+            const saveData = await handleApiResponse(saveResponse);
             if (!saveData.success) {
                 throw new Error(saveData.error || 'Failed to save consolidated feedback');
             }
@@ -1427,7 +1482,34 @@
             
         } catch (error) {
             console.error('Error:', error);
-            alert(`Error generating consolidated feedback: ${error.message}`);
+            const errorMsg = error.message || 'Unknown error occurred';
+            
+            // Create a nicer error notification
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-notification';
+            errorDiv.innerHTML = `
+                <div class="error-icon">⚠️</div>
+                <div class="error-message">${errorMsg}</div>
+                <div class="error-hint">
+                    ${errorMsg.includes('high demand') ? 
+                    'Try using a different model like GPT-4o or try again in a few minutes.' : 
+                    'Please check your input and try again.'}
+                </div>
+            `;
+            
+            // Style the error notification
+            errorDiv.style.padding = '10px 15px';
+            errorDiv.style.backgroundColor = 'rgba(255, 0, 0, 0.1)';
+            errorDiv.style.border = '1px solid #dc3545';
+            errorDiv.style.borderRadius = '4px';
+            errorDiv.style.marginTop = '10px';
+            errorDiv.style.color = '#dc3545';
+            
+            // Add it after the button
+            button.parentNode.appendChild(errorDiv);
+            
+            // Remove after 8 seconds
+            setTimeout(() => errorDiv.remove(), 8000);
         } finally {
             button.textContent = originalText;
             button.disabled = false;
@@ -1455,7 +1537,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (!data.success) {
                 throw new Error(data.error || 'Failed to save');
             }
@@ -1491,7 +1573,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (data.success) {
                 // Show save status
                 const saveStatus = document.createElement('div');
@@ -1544,7 +1626,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (!data.success) {
                 throw new Error(data.error || 'Failed to save feedback');
             }
@@ -1604,7 +1686,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (!data.success) {
                 throw new Error(data.error || 'Failed to save mark');
             }
@@ -1645,7 +1727,7 @@
     async function loadMacros() {
         try {
             const response = await fetch(`/get_paper_macros/{{ file_hash }}`);
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             
             if (!data.success) {
                 throw new Error(data.error || 'Failed to load macros');
@@ -1743,7 +1825,7 @@
                 }
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (!data.success) {
                 throw new Error(data.error || 'Failed to toggle macro');
             }
@@ -1921,7 +2003,7 @@
             }
             const criteriaId = firstCriterion.dataset.criteriaId;
             const response = await fetch(`/get_criteria/${criteriaId}`);
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             
             if (!data.success) {
                 throw new Error(data.error || 'Failed to get rubric info');
@@ -1931,7 +2013,7 @@
             
             // Load categories
             const categoriesResponse = await fetch(`/get_macro_categories/${rubricId}`);
-            const categoriesData = await categoriesResponse.json();
+            const categoriesData = await handleApiResponse(categoriesResponse);
             
             if (!categoriesData.success) {
                 throw new Error(categoriesData.error || 'Failed to load categories');
@@ -2009,7 +2091,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             console.log('Server response:', data);
             
             if (data.success) {
@@ -2038,7 +2120,7 @@
                 method: 'POST'
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (data.success) {
                 loadMacros(); // Reload the macros to show the changes
                 alert('Macro deleted successfully!');
@@ -2063,7 +2145,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (!data.success) {
                 throw new Error(data.error || 'Failed to save applied macros');
             }
@@ -2123,11 +2205,7 @@
                 })
             });
             
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             console.log('Server response:', data);
             
             if (data.success) {
@@ -2183,7 +2261,7 @@
     async function loadModerationResults() {
         try {
             const response = await fetch(`/get_moderation_feedback/{{ file_hash }}`);
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             
             console.log("Loaded moderation data:", data);
             
@@ -2258,7 +2336,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (data.success) {
                 // Show moderation interface
                 document.getElementById('moderationStatus').innerHTML = `

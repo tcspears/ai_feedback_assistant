@@ -351,7 +351,14 @@ def chat(file_hash):
         db.session.rollback()
         error_msg = str(e)
         api_logger.error(f"Model error in chat: {error_msg}")
-        return jsonify({"error": f"Model error: {error_msg}"}), 400
+        
+        # Check if it's an overloaded error
+        if "overloaded" in error_msg.lower():
+            return jsonify({
+                "error": "The AI service is currently experiencing high demand. Please try again in a few moments or select a different model."
+            }), 503  # Service Unavailable
+        else:
+            return jsonify({"error": f"Model error: {error_msg}"}), 400
         
     except Exception as e:
         db.session.rollback()
@@ -631,18 +638,30 @@ def generate_consolidated_feedback():
         
         api_logger.info("\nSending prompt to model...")
         # Generate consolidated feedback using the selected model
-        consolidated_feedback = llm_service.generate_response(
-            model=model,
-            messages=[{"role": "user", "content": prompt.build()}],
-            system_msg=system_msg
-        )
-        api_logger.info("\nReceived consolidated feedback from model:")
-        api_logger.info(consolidated_feedback)
-        
-        return jsonify({
-            'success': True,
-            'consolidated_feedback': consolidated_feedback
-        })
+        try:
+            consolidated_feedback = llm_service.generate_response(
+                model=model,
+                messages=[{"role": "user", "content": prompt.build()}],
+                system_msg=system_msg
+            )
+            api_logger.info("\nReceived consolidated feedback from model:")
+            api_logger.info(consolidated_feedback)
+            
+            return jsonify({
+                'success': True,
+                'consolidated_feedback': consolidated_feedback
+            })
+        except ValueError as e:
+            error_msg = str(e)
+            api_logger.error(f"LLM API error: {error_msg}")
+            
+            # Check if it's an overloaded error
+            if "overloaded" in error_msg.lower():
+                return jsonify({
+                    'error': 'The AI service is currently experiencing high demand. Please try again in a few moments or select a different model.'
+                }), 503  # Service Unavailable
+            else:
+                return jsonify({'error': f"Model error: {error_msg}"}), 400
     except Exception as e:
         api_logger.error(f"Error in generate_consolidated_feedback: {str(e)}")
         api_logger.error(f"Error traceback: {traceback.format_exc()}")
@@ -1301,93 +1320,106 @@ def moderate_criterion(file_hash, criteria_id):
         api_logger.info(f"Sending prompt to model {model}")
         
         # Get moderation result from LLM
-        result = llm_service.generate_response(
-            model=model,
-            messages=[{"role": "user", "content": prompt.build()}],
-            system_msg=system_msg
-        )
-        api_logger.info(f"Received full response from model: {result}")
-
-        # Parse the JSON result - first clean up any leading/trailing text that might not be part of the JSON
-        result_text = result.strip()
-        
-        # Try multiple approaches to extract JSON
-        json_extracted = False
-        json_content = None
-        
-        # Approach 1: Find JSON content between ```json and ``` markers
-        json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
-        if json_match:
-            api_logger.info("Found JSON content inside code blocks")
-            json_content = json_match.group(1)
-            json_extracted = True
-        
-        # Approach 2: Find content that looks like a JSON object (between curly braces)
-        if not json_extracted:
-            json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
-            if json_obj_match:
-                api_logger.info("Found JSON-like content between curly braces")
-                json_content = json_obj_match.group(1)
-                json_extracted = True
-        
-        # If we couldn't extract JSON, use the whole response
-        if not json_extracted:
-            api_logger.info("Using entire response as JSON")
-            json_content = result_text
-        
-        api_logger.info(f"Extracted JSON content: {json_content}")
-        
         try:
-            result_json = json.loads(json_content)
-            decision = result_json.get('decision', '').strip().upper()
-            reasoning = result_json.get('reasoning', '').strip()
-            
-            api_logger.info(f"Parsed JSON successfully. Decision: {decision}, Reasoning: {reasoning[:100]}...")
-            
-            # Validate decision is either PASSES or FAILS
-            if decision not in ['PASSES', 'FAILS']:
-                api_logger.error(f"Invalid decision value: {decision}")
-                return jsonify({'success': False, 'error': f'Invalid moderation decision: {decision}'})
-                
-            if not reasoning:
-                api_logger.error("Missing reasoning in result")
-                return jsonify({'success': False, 'error': 'Missing reasoning in moderation result'})
-                
-        except json.JSONDecodeError as e:
-            api_logger.error(f"JSON parse error: {str(e)}")
-            api_logger.error(f"Result text: {result_text}")
-            return jsonify({'success': False, 'error': f'Failed to parse moderation result as JSON: {str(e)}'})
-
-        # Store the moderation result
-        moderation_result = ModerationResult.query.filter_by(
-            session_id=moderation_session.id,
-            criteria_id=criteria_id
-        ).first()
-        
-        if not moderation_result:
-            api_logger.info("Creating new moderation result")
-            moderation_result = ModerationResult(
-                session_id=moderation_session.id,
-                criteria_id=criteria_id,
-                result=decision,
-                reasoning=reasoning,
-                moderated_feedback=criterion_feedback.feedback_text
+            result = llm_service.generate_response(
+                model=model,
+                messages=[{"role": "user", "content": prompt.build()}],
+                system_msg=system_msg
             )
-            db.session.add(moderation_result)
-        else:
-            api_logger.info("Updating existing moderation result")
-            moderation_result.result = decision
-            moderation_result.reasoning = reasoning
-            moderation_result.moderated_feedback = criterion_feedback.feedback_text
-        
-        db.session.commit()
-        api_logger.info("Moderation completed successfully")
+            api_logger.info(f"Received full response from model: {result}")
 
-        return jsonify({
-            'success': True,
-            'result': decision,
-            'reasoning': reasoning
-        })
+            # Parse the JSON result - first clean up any leading/trailing text that might not be part of the JSON
+            result_text = result.strip()
+            
+            # Try multiple approaches to extract JSON
+            json_extracted = False
+            json_content = None
+            
+            # Approach 1: Find JSON content between ```json and ``` markers
+            json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
+            if json_match:
+                api_logger.info("Found JSON content inside code blocks")
+                json_content = json_match.group(1)
+                json_extracted = True
+            
+            # Approach 2: Find content that looks like a JSON object (between curly braces)
+            if not json_extracted:
+                json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
+                if json_obj_match:
+                    api_logger.info("Found JSON-like content between curly braces")
+                    json_content = json_obj_match.group(1)
+                    json_extracted = True
+            
+            # If we couldn't extract JSON, use the whole response
+            if not json_extracted:
+                api_logger.info("Using entire response as JSON")
+                json_content = result_text
+            
+            api_logger.info(f"Extracted JSON content: {json_content}")
+            
+            try:
+                result_json = json.loads(json_content)
+                decision = result_json.get('decision', '').strip().upper()
+                reasoning = result_json.get('reasoning', '').strip()
+                
+                api_logger.info(f"Parsed JSON successfully. Decision: {decision}, Reasoning: {reasoning[:100]}...")
+                
+                # Validate decision is either PASSES or FAILS
+                if decision not in ['PASSES', 'FAILS']:
+                    api_logger.error(f"Invalid decision value: {decision}")
+                    return jsonify({'success': False, 'error': f'Invalid moderation decision: {decision}'})
+                    
+                if not reasoning:
+                    api_logger.error("Missing reasoning in result")
+                    return jsonify({'success': False, 'error': 'Missing reasoning in moderation result'})
+                    
+            except json.JSONDecodeError as e:
+                api_logger.error(f"JSON parse error: {str(e)}")
+                api_logger.error(f"Result text: {result_text}")
+                return jsonify({'success': False, 'error': f'Failed to parse moderation result as JSON: {str(e)}'})
+
+            # Store the moderation result
+            moderation_result = ModerationResult.query.filter_by(
+                session_id=moderation_session.id,
+                criteria_id=criteria_id
+            ).first()
+            
+            if not moderation_result:
+                api_logger.info("Creating new moderation result")
+                moderation_result = ModerationResult(
+                    session_id=moderation_session.id,
+                    criteria_id=criteria_id,
+                    result=decision,
+                    reasoning=reasoning,
+                    moderated_feedback=criterion_feedback.feedback_text
+                )
+                db.session.add(moderation_result)
+            else:
+                api_logger.info("Updating existing moderation result")
+                moderation_result.result = decision
+                moderation_result.reasoning = reasoning
+                moderation_result.moderated_feedback = criterion_feedback.feedback_text
+            
+            db.session.commit()
+            api_logger.info("Moderation completed successfully")
+
+            return jsonify({
+                'success': True,
+                'result': decision,
+                'reasoning': reasoning
+            })
+        except ValueError as e:
+            error_msg = str(e)
+            api_logger.error(f"LLM API error: {error_msg}")
+            
+            # Check if it's an overloaded error
+            if "overloaded" in error_msg.lower():
+                return jsonify({
+                    'success': False,
+                    'error': 'The AI service is currently experiencing high demand. Please try again in a few moments or select a different model.'
+                }), 503  # Service Unavailable
+            else:
+                return jsonify({'success': False, 'error': f"Model error: {error_msg}"}), 400
 
     except Exception as e:
         db.session.rollback()
@@ -1552,94 +1584,107 @@ def generate_ai_evaluation(file_hash, criteria_id):
 
         app.logger.info(f"Sending prompt to model {model}")
         # Get evaluation from LLM
-        result = llm_service.generate_response(
-            model=model,
-            messages=[{"role": "user", "content": prompt.build()}],
-            system_msg=system_msg
-        )
-        app.logger.info(f"Received response from model: {result[:100]}...")
-
-        # Try to extract JSON from the response
-        result_text = result.strip()
-        
-        # Try multiple approaches to extract JSON
-        json_extracted = False
-        json_content = None
-        
-        # Approach 1: Find JSON content between ```json and ``` markers
-        json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
-        if json_match:
-            app.logger.info("Found JSON content inside code blocks")
-            json_content = json_match.group(1)
-            json_extracted = True
-        
-        # Approach 2: Find content that looks like a JSON object (between curly braces)
-        if not json_extracted:
-            json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
-            if json_obj_match:
-                app.logger.info("Found JSON-like content between curly braces")
-                json_content = json_obj_match.group(1)
-                json_extracted = True
-        
-        # If we couldn't extract JSON, use the whole response
-        if not json_extracted:
-            app.logger.info("Using entire response as JSON")
-            json_content = result_text
-        
-        app.logger.info(f"Attempting to parse JSON: {json_content}")
         try:
-            result_json = json.loads(json_content)
-            evaluation_text = result_json.get('evaluation', '').strip()
-            mark = result_json.get('mark')
-            reasoning = result_json.get('reasoning', '').strip()
-            
-            if not evaluation_text or mark is None:
-                app.logger.error("Missing required fields in AI evaluation result")
-                return jsonify({'success': False, 'error': 'Invalid AI evaluation result'})
-                
-            # Validate mark is between 0 and 100
-            try:
-                mark = float(mark)
-                if not (0 <= mark <= 100):
-                    return jsonify({'success': False, 'error': 'Invalid mark value'})
-            except (ValueError, TypeError):
-                return jsonify({'success': False, 'error': 'Invalid mark value'})
-                
-        except json.JSONDecodeError as e:
-            app.logger.error(f"JSON parse error: {str(e)}")
-            app.logger.error(f"Result text: {result_text}")
-            app.logger.error(f"Attempted to parse: {json_content}")
-            return jsonify({'success': False, 'error': f'Failed to parse AI evaluation result as JSON: {str(e)}'})
-
-        # Store the AI evaluation
-        ai_evaluation = AIEvaluation.query.filter_by(
-            paper_id=paper.id,
-            criteria_id=criteria_id
-        ).first()
-        
-        if not ai_evaluation:
-            app.logger.info("Creating new AI evaluation")
-            ai_evaluation = AIEvaluation(
-                paper_id=paper.id,
-                criteria_id=criteria_id,
-                evaluation_text=evaluation_text,
-                mark=mark
+            result = llm_service.generate_response(
+                model=model,
+                messages=[{"role": "user", "content": prompt.build()}],
+                system_msg=system_msg
             )
-            db.session.add(ai_evaluation)
-        else:
-            app.logger.info("Updating existing AI evaluation")
-            ai_evaluation.evaluation_text = evaluation_text
-            ai_evaluation.mark = mark
-        
-        db.session.commit()
-        app.logger.info("AI evaluation completed successfully")
+            app.logger.info(f"Received response from model: {result[:100]}...")
 
-        return jsonify({
-            'success': True,
-            'evaluation_text': evaluation_text,
-            'mark': mark,
-            'reasoning': reasoning
-        })
+            # Try to extract JSON from the response
+            result_text = result.strip()
+            
+            # Try multiple approaches to extract JSON
+            json_extracted = False
+            json_content = None
+            
+            # Approach 1: Find JSON content between ```json and ``` markers
+            json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
+            if json_match:
+                app.logger.info("Found JSON content inside code blocks")
+                json_content = json_match.group(1)
+                json_extracted = True
+            
+            # Approach 2: Find content that looks like a JSON object (between curly braces)
+            if not json_extracted:
+                json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
+                if json_obj_match:
+                    app.logger.info("Found JSON-like content between curly braces")
+                    json_content = json_obj_match.group(1)
+                    json_extracted = True
+            
+            # If we couldn't extract JSON, use the whole response
+            if not json_extracted:
+                app.logger.info("Using entire response as JSON")
+                json_content = result_text
+            
+            app.logger.info(f"Attempting to parse JSON: {json_content}")
+            try:
+                result_json = json.loads(json_content)
+                evaluation_text = result_json.get('evaluation', '').strip()
+                mark = result_json.get('mark')
+                reasoning = result_json.get('reasoning', '').strip()
+                
+                if not evaluation_text or mark is None:
+                    app.logger.error("Missing required fields in AI evaluation result")
+                    return jsonify({'success': False, 'error': 'Invalid AI evaluation result'})
+                    
+                # Validate mark is between 0 and 100
+                try:
+                    mark = float(mark)
+                    if not (0 <= mark <= 100):
+                        return jsonify({'success': False, 'error': 'Invalid mark value'})
+                except (ValueError, TypeError):
+                    return jsonify({'success': False, 'error': 'Invalid mark value'})
+                    
+            except json.JSONDecodeError as e:
+                app.logger.error(f"JSON parse error: {str(e)}")
+                app.logger.error(f"Result text: {result_text}")
+                app.logger.error(f"Attempted to parse: {json_content}")
+                return jsonify({'success': False, 'error': f'Failed to parse AI evaluation result as JSON: {str(e)}'})
+
+            # Store the AI evaluation
+            ai_evaluation = AIEvaluation.query.filter_by(
+                paper_id=paper.id,
+                criteria_id=criteria_id
+            ).first()
+            
+            if not ai_evaluation:
+                app.logger.info("Creating new AI evaluation")
+                ai_evaluation = AIEvaluation(
+                    paper_id=paper.id,
+                    criteria_id=criteria_id,
+                    evaluation_text=evaluation_text,
+                    mark=mark
+                )
+                db.session.add(ai_evaluation)
+            else:
+                app.logger.info("Updating existing AI evaluation")
+                ai_evaluation.evaluation_text = evaluation_text
+                ai_evaluation.mark = mark
+            
+            db.session.commit()
+            app.logger.info("AI evaluation completed successfully")
+
+            return jsonify({
+                'success': True,
+                'evaluation_text': evaluation_text,
+                'mark': mark,
+                'reasoning': reasoning
+            })
+        except ValueError as e:
+            error_msg = str(e)
+            app.logger.error(f"LLM API error: {error_msg}")
+            
+            # Check if it's an overloaded error
+            if "overloaded" in error_msg.lower():
+                return jsonify({
+                    'success': False,
+                    'error': 'The AI service is currently experiencing high demand. Please try again in a few moments or select a different model.'
+                }), 503  # Service Unavailable
+            else:
+                return jsonify({'success': False, 'error': f"Model error: {error_msg}"}), 400
 
     except Exception as e:
         db.session.rollback()
