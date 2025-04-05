@@ -1612,6 +1612,37 @@
         }
     }
 
+    function copyConsolidatedFeedback() {
+        // Get content based on which view is active
+        const showMarkdown = document.getElementById('showMarkdownToggle').checked;
+        let textToCopy;
+        
+        if (showMarkdown) {
+            // Copy the raw markdown
+            textToCopy = document.getElementById('consolidatedFeedbackRaw').value;
+        } else {
+            // Copy the text content from the rendered view
+            textToCopy = document.getElementById('consolidatedFeedback').innerText;
+        }
+        
+        // Copy to clipboard
+        navigator.clipboard.writeText(textToCopy)
+            .then(() => {
+                // Show success message
+                const button = document.getElementById('copyConsolidatedFeedback');
+                const originalText = button.textContent;
+                button.textContent = 'Copied!';
+                
+                setTimeout(() => {
+                    button.textContent = originalText;
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('Failed to copy: ', err);
+                alert('Failed to copy text to clipboard');
+            });
+    }
+
     async function saveConsolidatedFeedback() {
         const feedback = document.getElementById('consolidatedFeedbackRaw').value;
         
