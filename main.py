@@ -514,9 +514,11 @@ def save_mark(file_hash):
                 criterion_feedback.mark = mark_value
                 criterion_feedback.updated_at = datetime.now()
             else:
+                # Initialize with empty feedback_text to avoid NOT NULL constraint
                 criterion_feedback = CriterionFeedback(
                     saved_feedback_id=saved_feedback.id,
                     criteria_id=criteria_id,
+                    feedback_text="",  # Default empty string instead of NULL
                     mark=mark_value
                 )
                 db.session.add(criterion_feedback)
