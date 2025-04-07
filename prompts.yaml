@@ -21,7 +21,7 @@ polish_feedback_prompt:
       subsections:
         goal: "Create a well-structured feedback document with clear sections for each criterion and an overall summary."
         requirements: |
-          1. Create a separate section for each marking criterion (e.g., "Analysis", "Structure", etc.)
+          1. Create a separate section for each marking criterion (e.g., "Analysis", "Structure", etc.) Keep the names of the sections as close as possible to the original feedback.
           2. Within each section, present the feedback in clear, professional prose.
           3. If the feedback includes specific examples from the essay text, include them in the feedback.
           4. End with an "Overall Comments" section that:
@@ -31,7 +31,7 @@ polish_feedback_prompt:
           6. Do not hallucinate or add new content not present in the original feedback
           7. Maintain consistent tone and style throughout
           8. Use appropriate Markdown formatting for headers and emphasis
-          9. Because you are an overworked *human*, be as concise as possible. You also have a tendency towards occasional typos, but not to the point of being distracting.
+          9. Because you are an overworked *human*, be concise without losing important information from the original feedback. 
           10. Do not write like an AI, or use the word "overworked" in your response.
         format: |
           # [Criterion Name]
