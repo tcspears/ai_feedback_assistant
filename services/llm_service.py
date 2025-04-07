@@ -2,6 +2,9 @@ from typing import Dict, List
 from openai import OpenAI
 from anthropic import Anthropic
 import logging
+import time
+import random
+import anthropic
 
 class LLMService:
     def __init__(self, openai_client: OpenAI, anthropic_client: Anthropic):
@@ -65,10 +68,41 @@ class LLMService:
         return response.choices[0].message.content.strip()
     
     def _handle_anthropic(self, model: str, messages: list, system_msg: str = None) -> str:
-        response = self.anthropic_client.messages.create(
-            model=model,
-            system=system_msg if system_msg else "",
-            messages=messages,
-            max_tokens=1000
-        )
-        return response.content[0].text.strip() 
+        # Add retry logic with exponential backoff
+        max_retries = 5
+        retry_count = 0
+        base_delay = 2  # starting delay in seconds
+        
+        while retry_count < max_retries:
+            try:
+                response = self.anthropic_client.messages.create(
+                    model=model,
+                    system=system_msg if system_msg else "",
+                    messages=messages,
+                    max_tokens=1000
+                )
+                return response.content[0].text.strip()
+                
+            except anthropic.InternalServerError as e:
+                # Check if it's the 529 Overloaded error specifically
+                error_type = getattr(e, 'type', None)
+                error_status = getattr(e, 'status_code', None)
+                
+                if error_status == 529 or (hasattr(e, 'response') and 'overloaded_error' in str(e.response)):
+                    retry_count += 1
+                    if retry_count >= max_retries:
+                        logging.error(f"Maximum retries reached for Anthropic API. Error: {e}")
+                        raise ValueError(f"Anthropic API is currently overloaded. Please try again later or use a different model.") from e
+                    
+                    # Calculate delay with exponential backoff and jitter
+                    delay = base_delay * (2 ** (retry_count - 1)) + random.uniform(0, 1)
+                    logging.warning(f"Anthropic API overloaded. Retrying in {delay:.2f} seconds... (Attempt {retry_count}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    # If it's not an overloaded error, raise immediately
+                    logging.error(f"Anthropic API error: {e}")
+                    raise ValueError(f"Error with Anthropic API: {e}") from e
+            
+            except Exception as e:
+                logging.error(f"Unexpected error with Anthropic API: {e}")
+                raise ValueError(f"Error with Anthropic API: {e}") from e 

@@ -351,7 +351,14 @@ def chat(file_hash):
         db.session.rollback()
         error_msg = str(e)
         api_logger.error(f"Model error in chat: {error_msg}")
-        return jsonify({"error": f"Model error: {error_msg}"}), 400
+        
+        # Check if it's an overloaded error
+        if "overloaded" in error_msg.lower():
+            return jsonify({
+                "error": "The AI service is currently experiencing high demand. Please try again in a few moments or select a different model."
+            }), 503  # Service Unavailable
+        else:
+            return jsonify({"error": f"Model error: {error_msg}"}), 400
         
     except Exception as e:
         db.session.rollback()
@@ -507,9 +514,11 @@ def save_mark(file_hash):
                 criterion_feedback.mark = mark_value
                 criterion_feedback.updated_at = datetime.now()
             else:
+                # Initialize with empty feedback_text to avoid NOT NULL constraint
                 criterion_feedback = CriterionFeedback(
                     saved_feedback_id=saved_feedback.id,
                     criteria_id=criteria_id,
+                    feedback_text="",  # Default empty string instead of NULL
                     mark=mark_value
                 )
                 db.session.add(criterion_feedback)
@@ -631,18 +640,30 @@ def generate_consolidated_feedback():
         
         api_logger.info("\nSending prompt to model...")
         # Generate consolidated feedback using the selected model
-        consolidated_feedback = llm_service.generate_response(
-            model=model,
-            messages=[{"role": "user", "content": prompt.build()}],
-            system_msg=system_msg
-        )
-        api_logger.info("\nReceived consolidated feedback from model:")
-        api_logger.info(consolidated_feedback)
-        
-        return jsonify({
-            'success': True,
-            'consolidated_feedback': consolidated_feedback
-        })
+        try:
+            consolidated_feedback = llm_service.generate_response(
+                model=model,
+                messages=[{"role": "user", "content": prompt.build()}],
+                system_msg=system_msg
+            )
+            api_logger.info("\nReceived consolidated feedback from model:")
+            api_logger.info(consolidated_feedback)
+            
+            return jsonify({
+                'success': True,
+                'consolidated_feedback': consolidated_feedback
+            })
+        except ValueError as e:
+            error_msg = str(e)
+            api_logger.error(f"LLM API error: {error_msg}")
+            
+            # Check if it's an overloaded error
+            if "overloaded" in error_msg.lower():
+                return jsonify({
+                    'error': 'The AI service is currently experiencing high demand. Please try again in a few moments or select a different model.'
+                }), 503  # Service Unavailable
+            else:
+                return jsonify({'error': f"Model error: {error_msg}"}), 400
     except Exception as e:
         api_logger.error(f"Error in generate_consolidated_feedback: {str(e)}")
         api_logger.error(f"Error traceback: {traceback.format_exc()}")
@@ -1022,19 +1043,29 @@ def save_consolidated_feedback(file_hash):
 @login_required
 def start_moderation(file_hash):
     try:
+        api_logger.info(f"Starting moderation session for paper {file_hash}")
+        data = request.get_json()
+        model = data.get('model', 'gpt-4o')
+        api_logger.info(f"Moderation model selected: {model}")
+        
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        api_logger.info(f"Found paper: {paper.filename}")
         
         # Clear any existing moderation results for this paper
         session = ModerationSession.query.filter_by(paper_id=paper.id).first()
         if session:
+            api_logger.info(f"Clearing previous moderation session (ID: {session.id})")
             ModerationResult.query.filter_by(session_id=session.id).delete()
             db.session.delete(session)
         
         # Create a new moderation session
         saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
         if not saved_feedback:
+            api_logger.error("No saved feedback found")
             return jsonify({'success': False, 'error': 'No saved feedback found'})
             
+        api_logger.info(f"Creating new moderation session with consolidated feedback length: {len(saved_feedback.consolidated_feedback) if saved_feedback.consolidated_feedback else 0}")
+        
         new_session = ModerationSession(
             paper_id=paper.id,
             original_feedback=saved_feedback.consolidated_feedback,
@@ -1042,12 +1073,15 @@ def start_moderation(file_hash):
         )
         db.session.add(new_session)
         db.session.commit()
+        
+        api_logger.info(f"New moderation session created (ID: {new_session.id})")
 
         return jsonify({'success': True})
 
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error in start_moderation: {str(e)}")
+        api_logger.error(f"Error in start_moderation: {str(e)}")
+        api_logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/get_moderation_feedback/<file_hash>')
@@ -1090,7 +1124,9 @@ def get_moderation_feedback(file_hash):
 @login_required
 def complete_moderation(file_hash):
     try:
+        api_logger.info(f"Completing moderation session for paper {file_hash}")
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        api_logger.info(f"Found paper: {paper.filename}")
         
         # Get the latest moderation session
         moderation_session = (ModerationSession.query
@@ -1099,7 +1135,10 @@ def complete_moderation(file_hash):
                             .first())
         
         if not moderation_session:
+            api_logger.error("No moderation session found")
             return jsonify({'success': False, 'error': 'No moderation session found'})
+            
+        api_logger.info(f"Found moderation session (ID: {moderation_session.id}, Status: {moderation_session.status})")
         
         # Update all criterion feedback with moderated versions
         moderated_feedback = {}
@@ -1110,14 +1149,21 @@ def complete_moderation(file_hash):
             ).first()
             
             if criterion_feedback:
+                api_logger.info(f"Updating criterion feedback for criteria ID: {result.criteria_id}")
+                api_logger.info(f"Previous feedback length: {len(criterion_feedback.feedback_text)}")
+                api_logger.info(f"New moderated feedback length: {len(result.moderated_feedback)}")
+                
                 criterion_feedback.feedback_text = result.moderated_feedback
                 moderated_feedback[result.criteria_id] = result.moderated_feedback
+            else:
+                api_logger.warning(f"Could not find criterion feedback for criteria ID: {result.criteria_id}")
         
         # Update session status
         moderation_session.status = 'completed'
         moderation_session.completed_at = func.now()
         
         db.session.commit()
+        api_logger.info(f"Moderation session completed successfully. Updated {len(moderated_feedback)} criterion feedbacks.")
 
         return jsonify({
             'success': True,
@@ -1126,14 +1172,17 @@ def complete_moderation(file_hash):
 
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error in complete_moderation: {str(e)}")
+        api_logger.error(f"Error in complete_moderation: {str(e)}")
+        api_logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/reject_moderation/<file_hash>', methods=['POST'])
 @login_required
 def reject_moderation(file_hash):
     try:
+        api_logger.info(f"Rejecting moderation session for paper {file_hash}")
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        api_logger.info(f"Found paper: {paper.filename}")
         
         # Get the latest moderation session
         moderation_session = (ModerationSession.query
@@ -1142,6 +1191,12 @@ def reject_moderation(file_hash):
                             .first())
         
         if moderation_session:
+            api_logger.info(f"Found moderation session (ID: {moderation_session.id}, Status: {moderation_session.status})")
+            
+            # Count moderation results before deletion
+            result_count = ModerationResult.query.filter_by(session_id=moderation_session.id).count()
+            api_logger.info(f"Deleting {result_count} moderation results")
+            
             # Clear all moderation results
             ModerationResult.query.filter_by(session_id=moderation_session.id).delete()
             
@@ -1150,12 +1205,16 @@ def reject_moderation(file_hash):
             moderation_session.completed_at = func.now()
             
             db.session.commit()
+            api_logger.info("Moderation session rejected successfully")
+        else:
+            api_logger.warning("No moderation session found to reject")
 
         return jsonify({'success': True})
 
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error in reject_moderation: {str(e)}")
+        api_logger.error(f"Error in reject_moderation: {str(e)}")
+        api_logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/moderate_criterion/<file_hash>/<criteria_id>', methods=['POST'])
@@ -1165,16 +1224,18 @@ def moderate_criterion(file_hash, criteria_id):
         # Get the model from request
         data = request.get_json()
         model = data.get('model', 'gpt-4o')
-        app.logger.info(f"Starting moderation for criterion {criteria_id} using model {model}")
+        api_logger.info(f"Starting moderation for criterion {criteria_id} using model {model}")
+        api_logger.info(f"Request data: {data}")
 
         # Get paper and criterion details
         paper = Paper.query.filter_by(hash=file_hash).first_or_404()
         criterion = RubricCriteria.query.get_or_404(criteria_id)
+        api_logger.info(f"Paper: {paper.filename}, Criterion: {criterion.section_name}")
         
         # Get saved feedback
         saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
         if not saved_feedback:
-            app.logger.error("No saved feedback found for paper")
+            api_logger.error("No saved feedback found for paper")
             return jsonify({'success': False, 'error': 'No saved feedback found'})
             
         criterion_feedback = CriterionFeedback.query.filter_by(
@@ -1183,8 +1244,11 @@ def moderate_criterion(file_hash, criteria_id):
         ).first()
         
         if not criterion_feedback:
-            app.logger.error("No criterion feedback found")
+            api_logger.error("No criterion feedback found")
             return jsonify({'success': False, 'error': 'No criterion feedback found'})
+        
+        api_logger.info(f"Criterion feedback: {criterion_feedback.feedback_text[:100]}...")
+        api_logger.info(f"Criterion mark: {criterion_feedback.mark}")
 
         # Get or create moderation session
         moderation_session = (ModerationSession.query
@@ -1193,7 +1257,7 @@ def moderate_criterion(file_hash, criteria_id):
                             .first())
                             
         if not moderation_session or moderation_session.status != 'pending':
-            app.logger.info("Creating new moderation session")
+            api_logger.info("Creating new moderation session")
             moderation_session = ModerationSession(
                 paper_id=paper.id,
                 original_feedback=saved_feedback.consolidated_feedback,
@@ -1214,15 +1278,19 @@ def moderate_criterion(file_hash, criteria_id):
         else:
             grade_descriptors_text = "No grade descriptors available."
         
+        api_logger.info(f"Grade descriptors: {grade_descriptors_text}")
+        
         # Get more detailed information about the rubric this criterion belongs to
         rubric = None
         if criterion.rubric_id:
             rubric = Rubric.query.get(criterion.rubric_id)
+            api_logger.info(f"Rubric: {rubric.name}" if rubric else "No rubric found")
 
         # Get all other criteria in the rubric for context
         related_criteria = []
         if rubric:
             related_criteria = RubricCriteria.query.filter_by(rubric_id=rubric.id).all()
+            api_logger.info(f"Related criteria count: {len(related_criteria)}")
             
         # Build detailed criterion info
         criterion_info = f"Criterion: {criterion.section_name}\n\n"
@@ -1235,6 +1303,8 @@ def moderate_criterion(file_hash, criteria_id):
             
         # Add weight information
         criterion_info += f"This criterion has a weight of {criterion.weight} in the overall assessment.\n"
+        
+        api_logger.info(f"Criterion info: {criterion_info}")
             
         # Load the criterion moderation prompt
         prompt_loader = PromptLoader('prompts.yaml')
@@ -1246,99 +1316,117 @@ def moderate_criterion(file_hash, criteria_id):
         prompt.add_section('mark_info', f"The proposed mark for this criterion is: {criterion_feedback.mark if criterion_feedback.mark else saved_feedback.mark}%")
         prompt.add_section('grade_descriptors', grade_descriptors_text)
 
-        app.logger.info(f"Sending prompt to model {model}")
+        # Log the complete prompt and system message
+        api_logger.info(f"System message for moderation: {system_msg}")
+        api_logger.info(f"Complete prompt for moderation: {prompt.build()}")
+        api_logger.info(f"Sending prompt to model {model}")
+        
         # Get moderation result from LLM
-        result = llm_service.generate_response(
-            model=model,
-            messages=[{"role": "user", "content": prompt.build()}],
-            system_msg=system_msg
-        )
-        app.logger.info(f"Received response from model: {result[:100]}...")
-
-        # Parse the JSON result - first clean up any leading/trailing text that might not be part of the JSON
-        result_text = result.strip()
-        
-        # Try multiple approaches to extract JSON
-        json_extracted = False
-        json_content = None
-        
-        # Approach 1: Find JSON content between ```json and ``` markers
-        json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
-        if json_match:
-            app.logger.info("Found JSON content inside code blocks")
-            json_content = json_match.group(1)
-            json_extracted = True
-        
-        # Approach 2: Find content that looks like a JSON object (between curly braces)
-        if not json_extracted:
-            json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
-            if json_obj_match:
-                app.logger.info("Found JSON-like content between curly braces")
-                json_content = json_obj_match.group(1)
-                json_extracted = True
-        
-        # If we couldn't extract JSON, use the whole response
-        if not json_extracted:
-            app.logger.info("Using entire response as JSON")
-            json_content = result_text
-        
-        app.logger.info(f"Attempting to parse JSON: {json_content}")
         try:
-            result_json = json.loads(json_content)
-            decision = result_json.get('decision', '').strip().upper()
-            reasoning = result_json.get('reasoning', '').strip()
-            
-            app.logger.info(f"Parsed JSON successfully. Decision: {decision}")
-            
-            # Validate decision is either PASSES or FAILS
-            if decision not in ['PASSES', 'FAILS']:
-                app.logger.error(f"Invalid decision value: {decision}")
-                return jsonify({'success': False, 'error': f'Invalid moderation decision: {decision}'})
-                
-            if not reasoning:
-                app.logger.error("Missing reasoning in result")
-                return jsonify({'success': False, 'error': 'Missing reasoning in moderation result'})
-                
-        except json.JSONDecodeError as e:
-            app.logger.error(f"JSON parse error: {str(e)}")
-            app.logger.error(f"Result text: {result_text}")
-            return jsonify({'success': False, 'error': f'Failed to parse moderation result as JSON: {str(e)}'})
-
-        # Store the moderation result
-        moderation_result = ModerationResult.query.filter_by(
-            session_id=moderation_session.id,
-            criteria_id=criteria_id
-        ).first()
-        
-        if not moderation_result:
-            app.logger.info("Creating new moderation result")
-            moderation_result = ModerationResult(
-                session_id=moderation_session.id,
-                criteria_id=criteria_id,
-                result=decision,
-                reasoning=reasoning,
-                moderated_feedback=criterion_feedback.feedback_text
+            result = llm_service.generate_response(
+                model=model,
+                messages=[{"role": "user", "content": prompt.build()}],
+                system_msg=system_msg
             )
-            db.session.add(moderation_result)
-        else:
-            app.logger.info("Updating existing moderation result")
-            moderation_result.result = decision
-            moderation_result.reasoning = reasoning
-            moderation_result.moderated_feedback = criterion_feedback.feedback_text
-        
-        db.session.commit()
-        app.logger.info("Moderation completed successfully")
+            api_logger.info(f"Received full response from model: {result}")
 
-        return jsonify({
-            'success': True,
-            'result': decision,
-            'reasoning': reasoning
-        })
+            # Parse the JSON result - first clean up any leading/trailing text that might not be part of the JSON
+            result_text = result.strip()
+            
+            # Try multiple approaches to extract JSON
+            json_extracted = False
+            json_content = None
+            
+            # Approach 1: Find JSON content between ```json and ``` markers
+            json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
+            if json_match:
+                api_logger.info("Found JSON content inside code blocks")
+                json_content = json_match.group(1)
+                json_extracted = True
+            
+            # Approach 2: Find content that looks like a JSON object (between curly braces)
+            if not json_extracted:
+                json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
+                if json_obj_match:
+                    api_logger.info("Found JSON-like content between curly braces")
+                    json_content = json_obj_match.group(1)
+                    json_extracted = True
+            
+            # If we couldn't extract JSON, use the whole response
+            if not json_extracted:
+                api_logger.info("Using entire response as JSON")
+                json_content = result_text
+            
+            api_logger.info(f"Extracted JSON content: {json_content}")
+            
+            try:
+                result_json = json.loads(json_content)
+                decision = result_json.get('decision', '').strip().upper()
+                reasoning = result_json.get('reasoning', '').strip()
+                
+                api_logger.info(f"Parsed JSON successfully. Decision: {decision}, Reasoning: {reasoning[:100]}...")
+                
+                # Validate decision is either PASSES or FAILS
+                if decision not in ['PASSES', 'FAILS']:
+                    api_logger.error(f"Invalid decision value: {decision}")
+                    return jsonify({'success': False, 'error': f'Invalid moderation decision: {decision}'})
+                    
+                if not reasoning:
+                    api_logger.error("Missing reasoning in result")
+                    return jsonify({'success': False, 'error': 'Missing reasoning in moderation result'})
+                    
+            except json.JSONDecodeError as e:
+                api_logger.error(f"JSON parse error: {str(e)}")
+                api_logger.error(f"Result text: {result_text}")
+                return jsonify({'success': False, 'error': f'Failed to parse moderation result as JSON: {str(e)}'})
+
+            # Store the moderation result
+            moderation_result = ModerationResult.query.filter_by(
+                session_id=moderation_session.id,
+                criteria_id=criteria_id
+            ).first()
+            
+            if not moderation_result:
+                api_logger.info("Creating new moderation result")
+                moderation_result = ModerationResult(
+                    session_id=moderation_session.id,
+                    criteria_id=criteria_id,
+                    result=decision,
+                    reasoning=reasoning,
+                    moderated_feedback=criterion_feedback.feedback_text
+                )
+                db.session.add(moderation_result)
+            else:
+                api_logger.info("Updating existing moderation result")
+                moderation_result.result = decision
+                moderation_result.reasoning = reasoning
+                moderation_result.moderated_feedback = criterion_feedback.feedback_text
+            
+            db.session.commit()
+            api_logger.info("Moderation completed successfully")
+
+            return jsonify({
+                'success': True,
+                'result': decision,
+                'reasoning': reasoning
+            })
+        except ValueError as e:
+            error_msg = str(e)
+            api_logger.error(f"LLM API error: {error_msg}")
+            
+            # Check if it's an overloaded error
+            if "overloaded" in error_msg.lower():
+                return jsonify({
+                    'success': False,
+                    'error': 'The AI service is currently experiencing high demand. Please try again in a few moments or select a different model.'
+                }), 503  # Service Unavailable
+            else:
+                return jsonify({'success': False, 'error': f"Model error: {error_msg}"}), 400
 
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error in moderate_criterion: {str(e)}")
-        app.logger.error(f"Error traceback: {traceback.format_exc()}")
+        api_logger.error(f"Error in moderate_criterion: {str(e)}")
+        api_logger.error(f"Error traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/accept_criterion_changes/<file_hash>/<criteria_id>', methods=['POST'])
@@ -1498,94 +1586,107 @@ def generate_ai_evaluation(file_hash, criteria_id):
 
         app.logger.info(f"Sending prompt to model {model}")
         # Get evaluation from LLM
-        result = llm_service.generate_response(
-            model=model,
-            messages=[{"role": "user", "content": prompt.build()}],
-            system_msg=system_msg
-        )
-        app.logger.info(f"Received response from model: {result[:100]}...")
-
-        # Try to extract JSON from the response
-        result_text = result.strip()
-        
-        # Try multiple approaches to extract JSON
-        json_extracted = False
-        json_content = None
-        
-        # Approach 1: Find JSON content between ```json and ``` markers
-        json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
-        if json_match:
-            app.logger.info("Found JSON content inside code blocks")
-            json_content = json_match.group(1)
-            json_extracted = True
-        
-        # Approach 2: Find content that looks like a JSON object (between curly braces)
-        if not json_extracted:
-            json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
-            if json_obj_match:
-                app.logger.info("Found JSON-like content between curly braces")
-                json_content = json_obj_match.group(1)
-                json_extracted = True
-        
-        # If we couldn't extract JSON, use the whole response
-        if not json_extracted:
-            app.logger.info("Using entire response as JSON")
-            json_content = result_text
-        
-        app.logger.info(f"Attempting to parse JSON: {json_content}")
         try:
-            result_json = json.loads(json_content)
-            evaluation_text = result_json.get('evaluation', '').strip()
-            mark = result_json.get('mark')
-            reasoning = result_json.get('reasoning', '').strip()
-            
-            if not evaluation_text or mark is None:
-                app.logger.error("Missing required fields in AI evaluation result")
-                return jsonify({'success': False, 'error': 'Invalid AI evaluation result'})
-                
-            # Validate mark is between 0 and 100
-            try:
-                mark = float(mark)
-                if not (0 <= mark <= 100):
-                    return jsonify({'success': False, 'error': 'Invalid mark value'})
-            except (ValueError, TypeError):
-                return jsonify({'success': False, 'error': 'Invalid mark value'})
-                
-        except json.JSONDecodeError as e:
-            app.logger.error(f"JSON parse error: {str(e)}")
-            app.logger.error(f"Result text: {result_text}")
-            app.logger.error(f"Attempted to parse: {json_content}")
-            return jsonify({'success': False, 'error': f'Failed to parse AI evaluation result as JSON: {str(e)}'})
-
-        # Store the AI evaluation
-        ai_evaluation = AIEvaluation.query.filter_by(
-            paper_id=paper.id,
-            criteria_id=criteria_id
-        ).first()
-        
-        if not ai_evaluation:
-            app.logger.info("Creating new AI evaluation")
-            ai_evaluation = AIEvaluation(
-                paper_id=paper.id,
-                criteria_id=criteria_id,
-                evaluation_text=evaluation_text,
-                mark=mark
+            result = llm_service.generate_response(
+                model=model,
+                messages=[{"role": "user", "content": prompt.build()}],
+                system_msg=system_msg
             )
-            db.session.add(ai_evaluation)
-        else:
-            app.logger.info("Updating existing AI evaluation")
-            ai_evaluation.evaluation_text = evaluation_text
-            ai_evaluation.mark = mark
-        
-        db.session.commit()
-        app.logger.info("AI evaluation completed successfully")
+            app.logger.info(f"Received response from model: {result[:100]}...")
 
-        return jsonify({
-            'success': True,
-            'evaluation_text': evaluation_text,
-            'mark': mark,
-            'reasoning': reasoning
-        })
+            # Try to extract JSON from the response
+            result_text = result.strip()
+            
+            # Try multiple approaches to extract JSON
+            json_extracted = False
+            json_content = None
+            
+            # Approach 1: Find JSON content between ```json and ``` markers
+            json_match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', result_text)
+            if json_match:
+                app.logger.info("Found JSON content inside code blocks")
+                json_content = json_match.group(1)
+                json_extracted = True
+            
+            # Approach 2: Find content that looks like a JSON object (between curly braces)
+            if not json_extracted:
+                json_obj_match = re.search(r'(\{[\s\S]*\})', result_text)
+                if json_obj_match:
+                    app.logger.info("Found JSON-like content between curly braces")
+                    json_content = json_obj_match.group(1)
+                    json_extracted = True
+            
+            # If we couldn't extract JSON, use the whole response
+            if not json_extracted:
+                app.logger.info("Using entire response as JSON")
+                json_content = result_text
+            
+            app.logger.info(f"Attempting to parse JSON: {json_content}")
+            try:
+                result_json = json.loads(json_content)
+                evaluation_text = result_json.get('evaluation', '').strip()
+                mark = result_json.get('mark')
+                reasoning = result_json.get('reasoning', '').strip()
+                
+                if not evaluation_text or mark is None:
+                    app.logger.error("Missing required fields in AI evaluation result")
+                    return jsonify({'success': False, 'error': 'Invalid AI evaluation result'})
+                    
+                # Validate mark is between 0 and 100
+                try:
+                    mark = float(mark)
+                    if not (0 <= mark <= 100):
+                        return jsonify({'success': False, 'error': 'Invalid mark value'})
+                except (ValueError, TypeError):
+                    return jsonify({'success': False, 'error': 'Invalid mark value'})
+                    
+            except json.JSONDecodeError as e:
+                app.logger.error(f"JSON parse error: {str(e)}")
+                app.logger.error(f"Result text: {result_text}")
+                app.logger.error(f"Attempted to parse: {json_content}")
+                return jsonify({'success': False, 'error': f'Failed to parse AI evaluation result as JSON: {str(e)}'})
+
+            # Store the AI evaluation
+            ai_evaluation = AIEvaluation.query.filter_by(
+                paper_id=paper.id,
+                criteria_id=criteria_id
+            ).first()
+            
+            if not ai_evaluation:
+                app.logger.info("Creating new AI evaluation")
+                ai_evaluation = AIEvaluation(
+                    paper_id=paper.id,
+                    criteria_id=criteria_id,
+                    evaluation_text=evaluation_text,
+                    mark=mark
+                )
+                db.session.add(ai_evaluation)
+            else:
+                app.logger.info("Updating existing AI evaluation")
+                ai_evaluation.evaluation_text = evaluation_text
+                ai_evaluation.mark = mark
+            
+            db.session.commit()
+            app.logger.info("AI evaluation completed successfully")
+
+            return jsonify({
+                'success': True,
+                'evaluation_text': evaluation_text,
+                'mark': mark,
+                'reasoning': reasoning
+            })
+        except ValueError as e:
+            error_msg = str(e)
+            app.logger.error(f"LLM API error: {error_msg}")
+            
+            # Check if it's an overloaded error
+            if "overloaded" in error_msg.lower():
+                return jsonify({
+                    'success': False,
+                    'error': 'The AI service is currently experiencing high demand. Please try again in a few moments or select a different model.'
+                }), 503  # Service Unavailable
+            else:
+                return jsonify({'success': False, 'error': f"Model error: {error_msg}"}), 400
 
     except Exception as e:
         db.session.rollback()
@@ -1751,6 +1852,7 @@ def get_paper_macros(file_hash):
                 'id': macro.id,
                 'name': macro.name,
                 'category': category_name,  # Use the category name
+                'category_id': macro.category_id,  # Add the category_id
                 'text': macro.text,
                 'criteria_id': macro.criteria_id,
                 'applied': macro.id in applied_macro_ids
@@ -1837,9 +1939,16 @@ def export_rubric(rubric_id):
             
             # Add macros to criterion data
             for macro in macros:
+                # Get category name if category_id exists
+                category_name = "General"  # Default category name
+                if macro.category_id:
+                    category = MacroCategory.query.get(macro.category_id)
+                    if category:
+                        category_name = category.name
+                
                 criterion_data["macros"].append({
                     "name": macro.name,
-                    "category": macro.category,
+                    "category": category_name,
                     "text": macro.text
                 })
             
@@ -1871,6 +1980,14 @@ def import_rubric():
         db.session.add(rubric)
         db.session.flush()  # Get the rubric_id
         
+        # Create a default "General" category if it doesn't exist
+        general_category = MacroCategory(
+            rubric_id=rubric.id,
+            name="General"
+        )
+        db.session.add(general_category)
+        db.session.flush()  # Get the category ID
+        
         # Add criteria with weights and macros
         total_weight = 0
         criteria_list = []
@@ -1898,12 +2015,30 @@ def import_rubric():
             for macro_data in macros:
                 if not macro_data.get('name') or not macro_data.get('text'):
                     continue
-                    
+                
+                # Get category name from macro data or use "General" as default
+                category_name = macro_data.get('category', 'General')
+                
+                # Find or create category with this name
+                category = MacroCategory.query.filter_by(
+                    rubric_id=rubric.id,
+                    name=category_name
+                ).first()
+                
+                if not category:
+                    # Create new category
+                    category = MacroCategory(
+                        rubric_id=rubric.id,
+                        name=category_name
+                    )
+                    db.session.add(category)
+                    db.session.flush()  # Get the category ID
+                
                 macro = FeedbackMacro(
                     rubric_id=rubric.id,
                     criteria_id=criterion.id,
                     name=macro_data['name'],
-                    category=macro_data.get('category', 'general'),
+                    category_id=category.id,
                     text=macro_data['text']
                 )
                 db.session.add(macro)
@@ -1968,7 +2103,7 @@ def update_macro(macro_id):
     try:
         data = request.json
         name = data['name']
-        category = data['category']
+        category_id = data['category_id']
         text = data['text']
         
         # Find and update the macro
@@ -1979,7 +2114,7 @@ def update_macro(macro_id):
         
         # Update the macro
         macro.name = name
-        macro.category = category
+        macro.category_id = category_id
         macro.text = text
         
         db.session.commit()
@@ -2209,6 +2344,35 @@ def manage_macros():
     # Get all rubrics
     rubrics = Rubric.query.order_by(Rubric.name).all()
     return render_template('macros.html', rubrics=rubrics)
+
+@app.route('/add_macro', methods=['POST'])
+@login_required
+def add_macro():
+    try:
+        data = request.json
+        name = data['name']
+        category_id = data['category_id']
+        text = data['text']
+        rubric_id = data.get('rubric_id')
+        criteria_id = data.get('criteria_id')
+        
+        # Create new macro
+        macro = FeedbackMacro(
+            name=name,
+            category_id=category_id,
+            text=text,
+            rubric_id=rubric_id,
+            criteria_id=criteria_id
+        )
+        db.session.add(macro)
+        db.session.commit()
+        
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error saving macro: {str(e)}")
+        return jsonify({"success": False, "error": str(e)})
 
 if __name__ == '__main__':
     print(f"Current working directory: {os.getcwd()}")

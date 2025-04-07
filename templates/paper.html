@@ -780,6 +780,50 @@
         .generate-ai-evaluation-btn:hover {
             background: var(--hover-color);
         }
+
+        .error-notification {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 6px;
+            background-color: rgba(220, 53, 69, 0.1);
+            border: 1px solid #dc3545;
+            display: flex;
+            align-items: flex-start;
+            max-width: 100%;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        
+        .error-icon {
+            font-size: 20px;
+            margin-right: 10px;
+            color: #dc3545;
+        }
+        
+        .error-message {
+            font-weight: bold;
+            color: #dc3545;
+            margin-bottom: 6px;
+        }
+        
+        .error-hint {
+            font-size: 13px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .error {
+            color: #dc3545;
+            background-color: rgba(220, 53, 69, 0.05);
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 3px solid #dc3545;
+            margin: 8px 0;
+        }
     </style>
 </head>
 <body>
@@ -1164,33 +1208,20 @@
         }
         
         // Handle category select change for normal and edit modals
-        const categorySelect = document.getElementById('macroCategory');
-        const customContainer = document.getElementById('customCategoryContainer');
-        
-        if (categorySelect) {
-            categorySelect.addEventListener('change', function() {
-                customContainer.style.display = this.value === 'custom' ? 'block' : 'none';
-            });
-        }
-        
-        const editCategorySelect = document.getElementById('editMacroCategory');
-        const editCustomContainer = document.getElementById('editCustomCategoryContainer');
-        
-        if (editCategorySelect) {
-            editCategorySelect.addEventListener('change', function() {
-                editCustomContainer.style.display = this.value === 'custom' ? 'block' : 'none';
-            });
-        }
+        // These sections have been removed as we now use dynamic categories from the database
         
         // Close modal when clicking outside
         window.onclick = function(event) {
             const macroModal = document.getElementById('macroModal');
             const editMacroModal = document.getElementById('editMacroModal');
+            const categoryModal = document.getElementById('categoryModal');
             
             if (event.target === macroModal) {
-                closeModal();
+                closeModal('macroModal');
             } else if (event.target === editMacroModal) {
-                closeEditModal();
+                closeModal('editMacroModal');
+            } else if (event.target === categoryModal) {
+                closeModal('categoryModal');
             }
         };
 
@@ -1226,6 +1257,18 @@
         }
     });
 
+    // Add error handling function for Anthropic overloaded errors
+    function handleApiResponse(response) {
+        if (!response.ok) {
+            // If it's a 503 Service Unavailable (likely Anthropic overloaded)
+            if (response.status === 503) {
+                throw new Error("The AI service is currently experiencing high demand. Please try again in a few moments or select a different model.");
+            }
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    }
+
     function sendMessage() {
         const messageInput = document.getElementById('userMessage');
         const message = messageInput.value.trim();
@@ -1252,12 +1295,7 @@
                 model: document.getElementById('modelSelect').value
             })
         })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
+        .then(handleApiResponse)
         .then(data => {
             // Remove loading indicator
             const loadingElement = document.getElementById(loadingId);
@@ -1282,7 +1320,15 @@
             }
 
             console.error('Error:', error);
-            chatMessages.innerHTML += `<p class="error"><strong>Error:</strong> ${error.message || 'Failed to get a response. The model may not be supported.'}</p>`;
+            const errorMsg = error.message || 'Failed to get a response';
+            
+            // Format the error message - specially handle overloaded errors
+            let formattedErrorMsg = errorMsg;
+            if (errorMsg.includes('high demand')) {
+                formattedErrorMsg = `${errorMsg}<br><span style="font-size: 0.9em; color: #888;">Try using a different model like GPT-4o or try again in a few minutes.</span>`;
+            }
+            
+            chatMessages.innerHTML += `<p class="error"><strong>Error:</strong> ${formattedErrorMsg}</p>`;
             chatMessages.scrollTop = chatMessages.scrollHeight;
         });
     }
@@ -1402,11 +1448,7 @@
                 })
             });
             
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (data.error) {
                 throw new Error(data.error);
             }
@@ -1426,7 +1468,7 @@
                 })
             });
             
-            const saveData = await saveResponse.json();
+            const saveData = await handleApiResponse(saveResponse);
             if (!saveData.success) {
                 throw new Error(saveData.error || 'Failed to save consolidated feedback');
             }
@@ -1440,7 +1482,34 @@
             
         } catch (error) {
             console.error('Error:', error);
-            alert(`Error generating consolidated feedback: ${error.message}`);
+            const errorMsg = error.message || 'Unknown error occurred';
+            
+            // Create a nicer error notification
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-notification';
+            errorDiv.innerHTML = `
+                <div class="error-icon">⚠️</div>
+                <div class="error-message">${errorMsg}</div>
+                <div class="error-hint">
+                    ${errorMsg.includes('high demand') ? 
+                    'Try using a different model like GPT-4o or try again in a few minutes.' : 
+                    'Please check your input and try again.'}
+                </div>
+            `;
+            
+            // Style the error notification
+            errorDiv.style.padding = '10px 15px';
+            errorDiv.style.backgroundColor = 'rgba(255, 0, 0, 0.1)';
+            errorDiv.style.border = '1px solid #dc3545';
+            errorDiv.style.borderRadius = '4px';
+            errorDiv.style.marginTop = '10px';
+            errorDiv.style.color = '#dc3545';
+            
+            // Add it after the button
+            button.parentNode.appendChild(errorDiv);
+            
+            // Remove after 8 seconds
+            setTimeout(() => errorDiv.remove(), 8000);
         } finally {
             button.textContent = originalText;
             button.disabled = false;
@@ -1468,7 +1537,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (!data.success) {
                 throw new Error(data.error || 'Failed to save');
             }
@@ -1504,7 +1573,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (data.success) {
                 // Show save status
                 const saveStatus = document.createElement('div');
@@ -1543,6 +1612,37 @@
         }
     }
 
+    function copyConsolidatedFeedback() {
+        // Get content based on which view is active
+        const showMarkdown = document.getElementById('showMarkdownToggle').checked;
+        let textToCopy;
+        
+        if (showMarkdown) {
+            // Copy the raw markdown
+            textToCopy = document.getElementById('consolidatedFeedbackRaw').value;
+        } else {
+            // Copy the text content from the rendered view
+            textToCopy = document.getElementById('consolidatedFeedback').innerText;
+        }
+        
+        // Copy to clipboard
+        navigator.clipboard.writeText(textToCopy)
+            .then(() => {
+                // Show success message
+                const button = document.getElementById('copyConsolidatedFeedback');
+                const originalText = button.textContent;
+                button.textContent = 'Copied!';
+                
+                setTimeout(() => {
+                    button.textContent = originalText;
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('Failed to copy: ', err);
+                alert('Failed to copy text to clipboard');
+            });
+    }
+
     async function saveConsolidatedFeedback() {
         const feedback = document.getElementById('consolidatedFeedbackRaw').value;
         
@@ -1557,7 +1657,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (!data.success) {
                 throw new Error(data.error || 'Failed to save feedback');
             }
@@ -1617,7 +1717,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (!data.success) {
                 throw new Error(data.error || 'Failed to save mark');
             }
@@ -1658,7 +1758,7 @@
     async function loadMacros() {
         try {
             const response = await fetch(`/get_paper_macros/{{ file_hash }}`);
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             
             if (!data.success) {
                 throw new Error(data.error || 'Failed to load macros');
@@ -1703,6 +1803,7 @@
                         macroButton.className = `macro-button ${macro.applied ? 'active' : ''}`;
                         macroButton.dataset.id = macro.id;
                         macroButton.dataset.category = macro.category;
+                        macroButton.dataset.categoryId = macro.category_id;
                         macroButton.dataset.text = macro.text;
                         macroButton.textContent = macro.name;
                         macroButton.title = macro.text;
@@ -1755,7 +1856,7 @@
                 }
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (!data.success) {
                 throw new Error(data.error || 'Failed to toggle macro');
             }
@@ -1902,65 +2003,113 @@
     function editMacro(button) {
         const macroId = button.dataset.id;
         const macroName = button.textContent;
-        const macroCategory = button.dataset.category;
         const macroText = button.dataset.text;
+        const categoryId = button.dataset.categoryId;
+        
+        console.log("Editing macro:", {
+            id: macroId,
+            name: macroName,
+            text: macroText,
+            categoryId: categoryId
+        });
         
         // Populate the edit form
         document.getElementById('editMacroId').value = macroId;
         document.getElementById('editMacroName').value = macroName;
         document.getElementById('editMacroText').value = macroText;
         
-        // Set the correct category
-        const categorySelect = document.getElementById('editMacroCategory');
-        let categoryFound = false;
-        
-        for (let i = 0; i < categorySelect.options.length; i++) {
-            if (categorySelect.options[i].value === macroCategory) {
-                categorySelect.selectedIndex = i;
-                categoryFound = true;
-                break;
-            }
-        }
-        
-        // If it's a custom category
-        if (!categoryFound && macroCategory !== 'custom') {
-            categorySelect.value = 'custom';
-            document.getElementById('editCustomCategory').value = macroCategory;
-            document.getElementById('editCustomCategoryContainer').style.display = 'block';
-        } else {
-            document.getElementById('editCustomCategoryContainer').style.display = 'none';
-        }
+        // Load categories and set the correct one
+        loadCategoriesForSelect('editMacroCategory', categoryId);
         
         // Show the edit modal
         document.getElementById('editMacroModal').style.display = 'block';
     }
     
-    function closeEditModal() {
-        document.getElementById('editMacroModal').style.display = 'none';
+    async function loadCategoriesForSelect(selectId, selectedCategoryId = null) {
+        try {
+            // Get the rubric ID from the first criterion's data
+            const firstCriterion = document.querySelector('[data-criteria-id]');
+            if (!firstCriterion) {
+                throw new Error('Could not determine rubric ID');
+            }
+            const criteriaId = firstCriterion.dataset.criteriaId;
+            const response = await fetch(`/get_criteria/${criteriaId}`);
+            const data = await handleApiResponse(response);
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to get rubric info');
+            }
+            
+            const rubricId = data.rubric_id;
+            
+            // Load categories
+            const categoriesResponse = await fetch(`/get_macro_categories/${rubricId}`);
+            const categoriesData = await handleApiResponse(categoriesResponse);
+            
+            if (!categoriesData.success) {
+                throw new Error(categoriesData.error || 'Failed to load categories');
+            }
+            
+            // Handle numeric conversion for selectedCategoryId
+            const numericSelectedCategoryId = selectedCategoryId ? ensureNumericId(selectedCategoryId) : null;
+            
+            console.log('Loading categories:', {
+                selectId,
+                selectedCategoryId: numericSelectedCategoryId,
+                availableCategories: categoriesData.categories
+            });
+            
+            // Update the select element
+            const select = document.getElementById(selectId);
+            select.innerHTML = ''; // Clear existing options
+            
+            categoriesData.categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category.id;
+                option.textContent = category.name;
+                
+                // Check if this category should be selected
+                if (numericSelectedCategoryId !== null && category.id === numericSelectedCategoryId) {
+                    option.selected = true;
+                    console.log('Selected category:', category);
+                }
+                
+                select.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Error loading categories:', error);
+            alert('Error loading categories: ' + error.message);
+        }
     }
     
-    // Update macro function
+    // Helper function to ensure IDs are properly processed
+    function ensureNumericId(id) {
+        // If id is null, undefined, or empty string, return null
+        if (id === null || id === undefined || id === '') {
+            return null;
+        }
+        // Otherwise, convert to integer
+        return parseInt(id, 10);
+    }
+
     async function updateMacro() {
         const macroId = document.getElementById('editMacroId').value;
         const name = document.getElementById('editMacroName').value.trim();
-        let category = document.getElementById('editMacroCategory').value;
+        const categoryId = document.getElementById('editMacroCategory').value;
         const text = document.getElementById('editMacroText').value.trim();
         
-        if (!name || !text) {
+        if (!name || !text || !categoryId) {
             alert('Please fill in all required fields');
             return;
         }
         
-        // Handle custom category
-        if (category === 'custom') {
-            category = document.getElementById('editCustomCategory').value.trim();
-            if (!category) {
-                alert('Please enter a custom category name');
-                return;
-            }
-        }
-        
         try {
+            console.log('Updating macro with:', {
+                name,
+                category_id: categoryId,
+                text
+            });
+            
             const response = await fetch(`/update_macro/${macroId}`, {
                 method: 'POST',
                 headers: {
@@ -1968,12 +2117,14 @@
                 },
                 body: JSON.stringify({
                     name: name,
-                    category: category,
+                    category_id: ensureNumericId(categoryId),
                     text: text
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
+            console.log('Server response:', data);
+            
             if (data.success) {
                 closeEditModal();
                 loadMacros(); // Reload the macros to show the changes
@@ -2000,7 +2151,7 @@
                 method: 'POST'
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (data.success) {
                 loadMacros(); // Reload the macros to show the changes
                 alert('Macro deleted successfully!');
@@ -2025,7 +2176,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (!data.success) {
                 throw new Error(data.error || 'Failed to save applied macros');
             }
@@ -2037,6 +2188,7 @@
     function showAddMacroModal(criteriaId) {
         const modal = document.getElementById('macroModal');
         modal.dataset.criteriaId = criteriaId;
+        loadCategoriesForSelect('macroCategory');
         modal.style.display = 'block';
         resetMacroForm();
     }
@@ -2048,32 +2200,29 @@
 
     function resetMacroForm() {
         document.getElementById('macroName').value = '';
-        document.getElementById('macroCategory').value = 'general';
-        document.getElementById('customCategory').value = '';
-        document.getElementById('customCategoryContainer').style.display = 'none';
+        document.getElementById('macroCategory').value = '';
         document.getElementById('macroText').value = '';
     }
 
     async function saveMacro() {
         const name = document.getElementById('macroName').value.trim();
-        let category = document.getElementById('macroCategory').value;
+        const categoryId = document.getElementById('macroCategory').value;
         const text = document.getElementById('macroText').value.trim();
         const criteriaId = document.getElementById('macroModal').dataset.criteriaId;
         
-        if (!name || !text) {
+        if (!name || !text || !categoryId) {
             alert('Please fill in all required fields');
             return;
         }
         
-        if (category === 'custom') {
-            category = document.getElementById('customCategory').value.trim();
-            if (!category) {
-                alert('Please enter a custom category name');
-                return;
-            }
-        }
-        
         try {
+            console.log('Saving macro with:', {
+                name,
+                category_id: categoryId,
+                text,
+                criteria_id: criteriaId
+            });
+            
             const response = await fetch('/save_macro_from_paper/{{ file_hash }}', {
                 method: 'POST',
                 headers: {
@@ -2081,19 +2230,17 @@
                 },
                 body: JSON.stringify({
                     name: name,
-                    category: category,
+                    category_id: ensureNumericId(categoryId),
                     text: text,
                     criteria_id: criteriaId
                 })
             });
             
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            const data = await handleApiResponse(response);
+            console.log('Server response:', data);
             
-            const data = await response.json();
             if (data.success) {
-                closeModal();
+                closeModal('macroModal');
                 loadMacros(); // Reload the macros to show the new one
                 alert('Macro saved successfully!');
             } else {
@@ -2108,19 +2255,11 @@
     // Add event listener for custom category selection
     document.addEventListener('DOMContentLoaded', function() {
         const categorySelect = document.getElementById('macroCategory');
-        const customContainer = document.getElementById('customCategoryContainer');
-        
-        if (categorySelect) {
-            categorySelect.addEventListener('change', function() {
-                customContainer.style.display = this.value === 'custom' ? 'block' : 'none';
-            });
-        }
         
         // Close modal when clicking outside
         window.onclick = function(event) {
-            const modal = document.getElementById('macroModal');
-            if (event.target === modal) {
-                closeModal();
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
             }
         };
     });
@@ -2153,7 +2292,7 @@
     async function loadModerationResults() {
         try {
             const response = await fetch(`/get_moderation_feedback/{{ file_hash }}`);
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             
             console.log("Loaded moderation data:", data);
             
@@ -2228,7 +2367,7 @@
                 })
             });
             
-            const data = await response.json();
+            const data = await handleApiResponse(response);
             if (data.success) {
                 // Show moderation interface
                 document.getElementById('moderationStatus').innerHTML = `
@@ -2706,68 +2845,72 @@
         }
     }
 
-    // Modify the showAddMacroModal function to load categories
-    async function showAddMacroModal(criteriaId) {
-        const modal = document.getElementById('macroModal');
-        modal.dataset.criteriaId = criteriaId;
-        
-        // Get the rubric ID from the criteria
-        try {
-            const response = await fetch(`/get_criteria/${criteriaId}`);
-            const data = await response.json();
-            if (data.success) {
-                await loadCategories(data.rubric_id);
-            }
-        } catch (error) {
-            console.error('Error loading rubric info:', error);
-        }
-        
-        modal.style.display = 'block';
-        resetMacroForm();
+    function createCategorySection(category) {
+        const section = document.createElement('div');
+        section.className = 'category-section';
+        section.innerHTML = `
+            <div class="category-header">
+                <div class="category-title">
+                    <span class="collapse-toggle" onclick="toggleCategory(this)">
+                        <i class="fas fa-chevron-down"></i>
+                    </span>
+                    <span class="category-name">${category.name}</span>
+                </div>
+                <div class="category-actions">
+                    <button class="btn btn-edit" onclick="showEditCategoryModal(${category.id}, '${category.name}')">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-delete" onclick="deleteCategory(${category.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <button class="btn btn-add" onclick="showAddMacroModal(${category.id})">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="category-content">
+                <ul class="macro-list">
+                    ${category.macros.map(macro => `
+                        <li class="macro-item">
+                            <div class="macro-info">
+                                <div class="macro-name">${macro.name}</div>
+                                <div class="macro-text">${macro.text}</div>
+                            </div>
+                            <div class="macro-actions">
+                                <button class="btn btn-edit" onclick="showEditMacroModal(${macro.id}, '${macro.name}', '${macro.text}', ${macro.category_id})">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-delete" onclick="deleteMacro(${macro.id})">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </li>
+                    `).join('')}
+                </ul>
+            </div>
+        `;
+        return section;
     }
 
-    // Modify the saveMacro function to use category ID
-    async function saveMacro() {
-        const name = document.getElementById('macroName').value.trim();
-        const categoryId = document.getElementById('macroCategory').value;
-        const text = document.getElementById('macroText').value.trim();
-        const criteriaId = document.getElementById('macroModal').dataset.criteriaId;
+    function closeModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+    }
+
+    function closeEditModal() {
+        closeModal('editMacroModal');
+    }
+
+    function showEditMacroModal(macroId, name, text, categoryId) {
+        // Populate the edit form
+        document.getElementById('editMacroId').value = macroId;
+        document.getElementById('editMacroName').value = name;
+        document.getElementById('editMacroText').value = text;
         
-        if (!name || !text || !categoryId) {
-            alert('Please fill in all required fields');
-            return;
-        }
+        // Load categories and set the correct one
+        loadCategoriesForSelect('editMacroCategory', categoryId);
         
-        try {
-            const response = await fetch('/save_macro_from_paper/{{ file_hash }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    name: name,
-                    category_id: categoryId,
-                    text: text,
-                    criteria_id: criteriaId
-                })
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            if (data.success) {
-                closeModal();
-                loadMacros(); // Reload the macros to show the new one
-                alert('Macro saved successfully!');
-            } else {
-                throw new Error(data.error || 'Failed to save macro');
-            }
-        } catch (error) {
-            console.error('Error saving macro:', error);
-            alert('Error saving macro: ' + error.message);
-        }
+        // Show the edit modal
+        document.getElementById('editMacroModal').style.display = 'block';
     }
     </script>
 
@@ -2818,17 +2961,9 @@
                 <div class="form-row">
                     <input type="text" id="editMacroName" placeholder="Short name (e.g., 'poor thesis')" required>
                     <select id="editMacroCategory">
-                        <option value="general">General</option>
-                        <option value="structure">Structure</option>
-                        <option value="content">Content</option>
-                        <option value="language">Language</option>
-                        <option value="critical">Critical Analysis</option>
-                        <option value="sources">Sources/References</option>
-                        <option value="custom">Custom...</option>
+                        <option value="">Loading categories...</option>
                     </select>
-                </div>
-                <div id="editCustomCategoryContainer" style="display: none;">
-                    <input type="text" id="editCustomCategory" placeholder="Enter custom category name">
+                    <button type="button" id="editAddCategoryBtn" onclick="showAddCategoryModal()" class="secondary-button">+</button>
                 </div>
                 <textarea id="editMacroText" placeholder="Enter the feedback text that will be inserted when this macro is used..." required rows="3"></textarea>
                 <input type="hidden" id="editMacroId">
@@ -2848,4 +2983,5 @@
     </div>
 </body>
 </html>
+
 
