@@ -1724,51 +1724,44 @@ def list_papers():
 @login_required
 def export_feedback(file_hash):
     try:
-        paper = Paper.query.filter_by(hash=file_hash).first_or_404()
+        # Get the current paper
+        current_paper = Paper.query.filter_by(hash=file_hash).first_or_404()
         
-        # Get saved feedback
-        saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
-        if not saved_feedback:
-            flash('No feedback found for this paper')
+        # Get the rubric ID for the current paper through its evaluations
+        rubric_id_query = (db.session.query(RubricCriteria.rubric_id)
+                        .join(Evaluation, Evaluation.criteria_id == RubricCriteria.id)
+                        .filter(Evaluation.paper_id == current_paper.id)
+                        .first())
+        
+        if not rubric_id_query:
+            flash('No rubric found for this paper')
             return redirect(url_for('paper', file_hash=file_hash))
+            
+        rubric_id = rubric_id_query[0]
         
-        # Get all evaluations
-        evaluations = (Evaluation.query
-                      .filter_by(paper_id=paper.id)
-                      .order_by(Evaluation.criteria_id.nullsfirst())
-                      .all())
+        # Get all papers that use the same rubric
+        related_papers = (Paper.query
+                        .join(Evaluation)
+                        .join(RubricCriteria)
+                        .filter(RubricCriteria.rubric_id == rubric_id)
+                        .distinct()
+                        .all())
         
-        # Get all criteria and their feedback
-        criteria_data = []
-        for eval in evaluations:
-            if eval.criteria_id:
-                criteria = RubricCriteria.query.get(eval.criteria_id)
-                if criteria:
-                    # Get criterion-specific mark and feedback
-                    criterion_feedback = CriterionFeedback.query.filter_by(
-                        saved_feedback_id=saved_feedback.id,
-                        criteria_id=eval.criteria_id
-                    ).first()
-                    
-                    criterion_mark = criterion_feedback.mark if criterion_feedback and criterion_feedback.mark else 0
-                    criterion_feedback_text = criterion_feedback.feedback_text if criterion_feedback else eval.evaluation_text
-                    
-                    criteria_data.append({
-                        'name': criteria.section_name,
-                        'mark': criterion_mark,
-                        'weight': criteria.weight,
-                        'feedback': criterion_feedback_text or 'No feedback'
-                    })
-        
-        # Create CSV data with a single row per essay
+        # Create CSV data with multiple rows (one per paper)
         output = StringIO()
         writer = csv.writer(output)
+        
+        # First, determine all criteria for this rubric to create headers
+        criteria = (RubricCriteria.query
+                   .filter_by(rubric_id=rubric_id)
+                   .order_by(RubricCriteria.id)
+                   .all())
         
         # Create headers
         headers = ['Paper Name', 'Total Mark']
         
         # Add column headers for each criterion
-        for i, criterion in enumerate(criteria_data):
+        for i, criterion in enumerate(criteria):
             criterion_num = i + 1
             headers.extend([
                 f'Criterion {criterion_num} Name',
@@ -1783,26 +1776,62 @@ def export_feedback(file_hash):
         # Write headers
         writer.writerow(headers)
         
-        # Create a single row with all data
-        row_data = [paper.filename]
+        # Process each paper
+        for paper in related_papers:
+            # Get saved feedback for this paper
+            saved_feedback = SavedFeedback.query.filter_by(paper_id=paper.id).first()
+            if not saved_feedback:
+                # Skip papers without feedback
+                continue
+            
+            # Create a row for this paper
+            row_data = [paper.filename]
+            
+            # Add total mark
+            row_data.append(f"{saved_feedback.mark:.1f}%" if saved_feedback.mark else 'Not assigned')
+            
+            # Process each criterion
+            for criterion in criteria:
+                # Get criterion-specific feedback and mark
+                criterion_feedback = CriterionFeedback.query.filter_by(
+                    saved_feedback_id=saved_feedback.id,
+                    criteria_id=criterion.id
+                ).first()
+                
+                # Get evaluation text as fallback
+                evaluation = Evaluation.query.filter_by(
+                    paper_id=paper.id,
+                    criteria_id=criterion.id
+                ).first()
+                
+                criterion_mark = criterion_feedback.mark if criterion_feedback and criterion_feedback.mark is not None else 'Not assigned'
+                
+                # Get feedback text (from criterion feedback or evaluation)
+                if criterion_feedback and criterion_feedback.feedback_text:
+                    criterion_feedback_text = criterion_feedback.feedback_text
+                elif evaluation and evaluation.evaluation_text:
+                    criterion_feedback_text = evaluation.evaluation_text
+                else:
+                    criterion_feedback_text = 'No feedback'
+                
+                # Add criterion data to row
+                row_data.extend([
+                    criterion.section_name,
+                    f"{criterion_mark:.1f}%" if isinstance(criterion_mark, (int, float)) else criterion_mark,
+                    f"{criterion.weight:.2f}",
+                    criterion_feedback_text
+                ])
+            
+            # Add consolidated feedback
+            row_data.append(saved_feedback.consolidated_feedback if saved_feedback.consolidated_feedback else 'No consolidated feedback')
+            
+            # Write the row
+            writer.writerow(row_data)
         
-        # Add total mark
-        row_data.append(f"{saved_feedback.mark:.1f}%" if saved_feedback.mark else 'Not assigned')
-        
-        # Add data for each criterion
-        for criterion in criteria_data:
-            row_data.extend([
-                criterion['name'],
-                f"{criterion['mark']:.1f}%" if criterion['mark'] else 'Not assigned',
-                f"{criterion['weight']:.2f}",
-                criterion['feedback']
-            ])
-        
-        # Add consolidated feedback
-        row_data.append(saved_feedback.consolidated_feedback if saved_feedback.consolidated_feedback else 'No consolidated feedback')
-        
-        # Write the row
-        writer.writerow(row_data)
+        # Get the rubric name for the filename
+        rubric = Rubric.query.get(rubric_id)
+        rubric_name = rubric.name if rubric else "rubric"
+        safe_rubric_name = "".join(c if c.isalnum() else "_" for c in rubric_name)
         
         # Create the response
         output.seek(0)
@@ -1810,11 +1839,12 @@ def export_feedback(file_hash):
             BytesIO(output.getvalue().encode('utf-8')),
             mimetype='text/csv',
             as_attachment=True,
-            download_name=f'{paper.filename}_feedback.csv'
+            download_name=f'{safe_rubric_name}_feedback.csv'
         )
         
     except Exception as e:
         app.logger.error(f"Error exporting feedback: {str(e)}")
+        app.logger.error(traceback.format_exc())
         flash('Error exporting feedback')
         return redirect(url_for('paper', file_hash=file_hash))
 
