@@ -1255,6 +1255,18 @@
         if (contextMenu) {
             setupMacroContextMenu();
         }
+
+        // Add initial validation
+        validateCriteriaFeedback();
+        
+        // Add event listeners to validate when inputs change
+        document.querySelectorAll('.criterion-mark-input').forEach(input => {
+            input.addEventListener('input', validateCriteriaFeedback);
+        });
+        
+        document.querySelectorAll('.feedback-input').forEach(textarea => {
+            textarea.addEventListener('input', validateCriteriaFeedback);
+        });
     });
 
     // Add error handling function for Anthropic overloaded errors
@@ -1412,7 +1424,80 @@
         }
     }
 
+    // Add function to validate criteria feedback
+    function validateCriteriaFeedback() {
+        const criterionMarkInputs = document.querySelectorAll('.criterion-mark-input');
+        const feedbackInputs = document.querySelectorAll('.feedback-input');
+        const generateButton = document.getElementById('generateConsolidatedFeedback');
+        const incompleteItems = [];
+        
+        // Check each criterion mark
+        criterionMarkInputs.forEach(input => {
+            const criteriaId = input.dataset.criteriaId;
+            const criterionName = input.closest('.evaluation-section').querySelector('h3').textContent;
+            
+            if (!input.value || input.value.trim() === '') {
+                incompleteItems.push(`Mark for "${criterionName}"`);
+            }
+        });
+        
+        // Check each feedback text area
+        feedbackInputs.forEach(textarea => {
+            const criteriaId = textarea.dataset.criteriaId;
+            const criterionName = textarea.closest('.evaluation-section').querySelector('h3').textContent;
+            
+            if (!textarea.value || textarea.value.trim() === '') {
+                incompleteItems.push(`Feedback for "${criterionName}"`);
+            }
+        });
+        
+        // If any items are missing, disable button and show tooltip
+        if (incompleteItems.length > 0) {
+            generateButton.disabled = true;
+            generateButton.title = `Please complete all criteria before generating consolidated feedback.\nMissing: ${incompleteItems.join(', ')}`;
+            
+            // Add warning message before the button
+            let warningEl = document.getElementById('feedbackValidationWarning');
+            if (!warningEl) {
+                warningEl = document.createElement('div');
+                warningEl.id = 'feedbackValidationWarning';
+                warningEl.className = 'error-notification';
+                warningEl.innerHTML = `
+                    <div class="error-icon">⚠️</div>
+                    <div class="error-message">Incomplete Criteria</div>
+                    <div class="error-hint">
+                        Please add marks and feedback for all criteria before generating consolidated feedback.
+                        <div class="missing-items" style="margin-top:5px;font-size:12px;">Missing: ${incompleteItems.join(', ')}</div>
+                    </div>
+                `;
+                generateButton.parentNode.insertBefore(warningEl, generateButton);
+            } else {
+                warningEl.querySelector('.missing-items').textContent = `Missing: ${incompleteItems.join(', ')}`;
+            }
+            
+            return false;
+        } else {
+            // Enable button and remove tooltip
+            generateButton.disabled = false;
+            generateButton.title = '';
+            
+            // Remove warning if it exists
+            const warningEl = document.getElementById('feedbackValidationWarning');
+            if (warningEl) {
+                warningEl.remove();
+            }
+            
+            return true;
+        }
+    }
+
+    // Add to existing async function generateConsolidatedFeedback() to validate first
     async function generateConsolidatedFeedback() {
+        // First validate that all criteria have marks and feedback
+        if (!validateCriteriaFeedback()) {
+            return; // Stop if validation fails
+        }
+        
         const button = document.getElementById('generateConsolidatedFeedback');
         const originalText = button.textContent;
         button.textContent = 'Generating...';
@@ -1421,7 +1506,7 @@
         try {
             // Collect all criterion feedback
             const criterionFeedback = {};
-            document.querySelectorAll('.core-feedback-textarea').forEach(textarea => {
+            document.querySelectorAll('.feedback-input').forEach(textarea => {
                 const criteriaId = textarea.dataset.criteriaId;
                 criterionFeedback[criteriaId] = textarea.value;
             });
@@ -1496,14 +1581,6 @@
                     'Please check your input and try again.'}
                 </div>
             `;
-            
-            // Style the error notification
-            errorDiv.style.padding = '10px 15px';
-            errorDiv.style.backgroundColor = 'rgba(255, 0, 0, 0.1)';
-            errorDiv.style.border = '1px solid #dc3545';
-            errorDiv.style.borderRadius = '4px';
-            errorDiv.style.marginTop = '10px';
-            errorDiv.style.color = '#dc3545';
             
             // Add it after the button
             button.parentNode.appendChild(errorDiv);
